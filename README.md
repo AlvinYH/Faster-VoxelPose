@@ -18,6 +18,7 @@ We use the Shelf/Campus and CMU Panoptic datasets. Please refer to [VoxelPose](h
 
 ## Training
 <img src="assets/teaser.jpg" width="800"/>
+
 ### CMU Panoptic dataset
 
 Train and validate on the five selected camera views. You can specify the GPU devices and batch size per GPU in the config file. 
