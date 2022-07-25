@@ -182,7 +182,6 @@ class Shelf(JointsDataset):
                 mpjpes = np.mean(np.sqrt(np.sum((gt[np.newaxis] - pred) ** 2, axis=-1)), axis=-1)
                 min_n = np.argmin(mpjpes)
                 min_mpjpe = np.min(mpjpes)
-                print(min_mpjpe)
                 if min_mpjpe < recall_threshold:
                     match_gt += 1
                 total_gt += 1

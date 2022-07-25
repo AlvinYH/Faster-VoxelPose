@@ -15,6 +15,34 @@ pip install -r requirements.txt
 ## Data 
 We use the Shelf/Campus and CMU Panoptic datasets. Please refer to [VoxelPose](https://github.com/microsoft/voxelpose-pytorch#data-preparation) for detailed instructions.
 
+The directory tree should look like this:
+```
+${ROOT}
+|-- data
+    |-- Panoptic
+        |-- 16060224_haggling1
+        |   |-- hdImgs
+        |   |-- hdvideos
+        |   |-- hdPose3d_stage1_coco19
+        |   |-- calibration_160224_haggling1.json
+        |-- 160226_haggling1  
+        |-- ...
+    |-- Shelf
+    |   |-- Camera0
+    |   |-- ...
+    |   |-- Camera4
+    |   |-- actorsGT.mat
+    |   |-- calibration_shelf.json
+    |   |-- pred_shelf_maskrcnn_hrnet_coco.pkl
+    |-- Campus
+    |   |-- Camera0
+    |   |-- Camera1
+    |   |-- Camera2
+    |   |-- actorsGT.mat
+    |   |-- calibration_campus.json
+    |   |-- pred_campus_maskrcnn_hrnet_coco.pkl
+    |-- panoptic_training_pose.pkl
+```
 
 ## Training
 <img src="assets/teaser.jpg" width="800"/>
