@@ -1,6 +1,6 @@
 # Faster VoxelPose
 This is the official implementation for:
-> **Faster VoxelPose: Real-time 3D Human Pose Estimation by Orthographic Projection**,            
+> **[Faster VoxelPose: Real-time 3D Human Pose Estimation by Orthographic Projection](https://arxiv.org/pdf/2207.10955.pdf)**,            
 > Hang Ye, Wentao Zhu, Chunyu Wang, Rujie Wu, and Yizhou Wang       
 > *ECCV 2022*
 
