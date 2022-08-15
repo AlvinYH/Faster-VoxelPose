@@ -119,7 +119,7 @@ class JointsDataset(Dataset):
             # dataset only for testing: no gt 3d pose
             if 'joints_3d' not in db_rec:
                 meta = {
-                    'key': db_rec['key'],
+                    'seq': db_rec['seq'],
                     'image': db_rec['image'],
                     'camera': db_rec['camera']
                 }
@@ -155,7 +155,7 @@ class JointsDataset(Dataset):
                 'joints_3d_vis': joints_3d_vis_u,
                 'roots_3d': roots_3d,
                 'bbox': target['bbox'],
-                'key': db_rec['key'],
+                'seq': db_rec['seq'],
                 'camera': db_rec['camera'],
                 'trans': trans
             }

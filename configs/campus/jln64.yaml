@@ -6,7 +6,7 @@ CUDNN:
 DISTORT_IMAGE: true
 BACKBONE: 'resnet'
 MODEL: 'voxelpose'
-GPUS: '0'
+GPUS: '1'
 OUTPUT_DIR: 'output'
 LOG_DIR: 'log'
 WORKERS: 4

@@ -13,7 +13,6 @@ import numpy as np
 import json_tricks as json
 import pickle
 import logging
-import os
 import cv2
 import copy
 
@@ -86,7 +85,7 @@ class Panoptic(JointsDataset):
 
         self.cameras = self._get_cam()
         self.db_file = 'panoptic_{}_cam{}.pkl'.format(self.image_set, self.num_views)
-        self.db_file = os.path.join(self.dataset_root, self.db_file)
+        self.db_file = osp.join(self.dataset_root, self.db_file)
 
         if osp.exists(self.db_file):
             info = pickle.load(open(self.db_file, 'rb'))
@@ -121,31 +120,33 @@ class Panoptic(JointsDataset):
 
                     missing_image = False
                     for k, v in cameras.items():
-                        suffix = os.path.basename(anno_file).replace("body3DScene", "")
+                        suffix = osp.basename(anno_file).replace("body3DScene", "")
                         prefix = "{:02d}_{:02d}".format(k[0], k[1])
-                        image_path = os.path.join(seq, "hdImgs", prefix, prefix + suffix)
+                        image_path = osp.join(seq, "hdImgs", prefix, prefix + suffix)
                         image_path = image_path.replace("json", "jpg")
-                        if not os.path.exists(os.path.join(self.dataset_root, image_path)):
+                        if not osp.exists(osp.join(self.dataset_root, image_path)):
                             logger.info("Image not found: {}. Skipped.".format(image_path))
                             missing_image = True
                             break
                         
-                        data_numpy = cv2.imread(image_path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
+                        data_numpy = cv2.imread(osp.join(self.dataset_root, image_path), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
                         assert data_numpy is not None, "image file not exist"
-                        
-                        r = 0
-                        c = np.array([self.ori_image_width / 2.0, self.ori_image_height / 2.0])
-                        s = get_scale((self.ori_image_width, self.ori_image_height),
-                                    self.image_size)
-                        trans = get_affine_transform(c, s, r, self.image_size)
 
-                        input = cv2.warpAffine(
-                            data_numpy,
-                            trans, (int(self.image_size[0]), int(self.image_size[1])),
-                            flags=cv2.INTER_LINEAR)
-                        
-                        image_path = image_path.replace(".jpg", "_resized.jpg")
-                        cv2.imwrite(image_path, input)
+                        # resize the image for preprocessing
+                        if data_numpy.shape[0] == self.ori_image_height:
+                            r = 0
+                            c = np.array([self.ori_image_width / 2.0, self.ori_image_height / 2.0])
+                            s = get_scale((self.ori_image_width, self.ori_image_height),
+                                        self.image_size)
+                            trans = get_affine_transform(c, s, r, self.image_size)
+                            
+                            input = cv2.warpAffine(
+                                data_numpy,
+                                trans, (int(self.image_size[0]), int(self.image_size[1])),
+                                flags=cv2.INTER_LINEAR)
+                            
+                            cv2.imwrite(osp.join(self.dataset_root, image_path), input)
+                            print("resize and overwrite the image:", image_path)
 
                         our_cam = dict()
                         our_cam['R'] = v['R']
@@ -181,7 +182,7 @@ class Panoptic(JointsDataset):
 
                         if len(all_poses_3d) > 0:
                             self.db.append({
-                                'key': seq,
+                                'seq': seq,
                                 'image': osp.join(self.dataset_root, image_path),
                                 'joints_3d': all_poses_3d,
                                 'joints_3d_vis': all_poses_3d_vis,
@@ -203,7 +204,7 @@ class Panoptic(JointsDataset):
         for seq in self.sequence_list:
             cameras[seq] = dict()
 
-            cam_file = os.path.join(self.dataset_root, seq, "calibration_{:s}.json".format(seq))
+            cam_file = osp.join(self.dataset_root, seq, "calibration_{:s}.json".format(seq))
             with open(cam_file, "r") as f:
                 calib = json.load(f)
 
@@ -274,7 +275,7 @@ class Panoptic(JointsDataset):
 
         mpjpe = self._eval_list_to_mpjpe(eval_list)
         recall = self._eval_list_to_recall(eval_list, total_gt)
-        msg = 'ap@25: {aps_25:.4f}\tap@50: {aps_50:.4f}\tap@75: {aps_75:.4f}\t' \
+        msg = 'Evaluation results on Panoptic dataset:\nap@25: {aps_25:.4f}\tap@50: {aps_50:.4f}\tap@75: {aps_75:.4f}\t' \
               'ap@100: {aps_100:.4f}\tap@125: {aps_125:.4f}\tap@150: {aps_150:.4f}\t' \
               'recall@500mm: {recall:.4f}\tmpjpe@500mm: {mpjpe:.3f}'.format(
                 aps_25=aps[0], aps_50=aps[1], aps_75=aps[2], aps_100=aps[3],

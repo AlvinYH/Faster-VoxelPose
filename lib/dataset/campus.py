@@ -87,23 +87,24 @@ class Campus(JointsDataset):
 
         for i in self.frame_range:
             for k, cam in cameras.items():
-                image_path = osp.join(self.dataset_root, "Camera" + str(k), "campus4-c{0}-{1:05d}.png".format(str(k), i))
-
-                data_numpy = cv2.imread(image_path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
+                image_path = osp.join("Camera" + str(k), "campus4-c{0}-{1:05d}.png".format(str(k), i))
+                data_numpy = cv2.imread(osp.join(self.dataset_root, image_path), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
                 assert data_numpy is not None, "image file not exist"
-                        
-                r = 0
-                c = np.array([self.ori_image_width / 2.0, self.ori_image_height / 2.0])
-                s = get_scale((self.ori_image_width, self.ori_image_height), self.image_size)
-                trans = get_affine_transform(c, s, r, self.image_size)
 
-                input = cv2.warpAffine(
-                        data_numpy,
-                        trans, (int(self.image_size[0]), int(self.image_size[1])),
-                        flags=cv2.INTER_LINEAR)
-                        
-                image_path = image_path.replace(".png", "_resized.png")
-                cv2.imwrite(image_path, input)
+                # resize the image for preprocessing
+                if data_numpy.shape[0] == self.ori_image_height:
+                    r = 0
+                    c = np.array([self.ori_image_width / 2.0, self.ori_image_height / 2.0])
+                    s = get_scale((self.ori_image_width, self.ori_image_height),
+                                   self.image_size)
+                    trans = get_affine_transform(c, s, r, self.image_size)
+                    input = cv2.warpAffine(
+                            data_numpy,
+                            trans, (int(self.image_size[0]), int(self.image_size[1])),
+                            flags=cv2.INTER_LINEAR)
+                            
+                    cv2.imwrite(osp.join(self.dataset_root, image_path), input)
+                    print("resize and overwrite the image:", image_path)
                 
                 all_poses_3d = []
                 all_poses_3d_vis = []
@@ -118,7 +119,7 @@ class Campus(JointsDataset):
                 preds = [np.array(p["pred"]) for p in preds]
 
                 self.db.append({
-                    'key': '0',
+                    'seq': 'campus',
                     'image': osp.join(self.dataset_root, image_path),
                     'camera': cam,
                     'pred_pose2d': preds,

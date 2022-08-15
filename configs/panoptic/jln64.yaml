@@ -49,7 +49,7 @@ TRAIN:
   LR: 0.0001
 TEST:
   MODEL_FILE: 'model_best.pth.tar'
-  BATCH_SIZE: 1
+  BATCH_SIZE: 16
 DEBUG:
   DEBUG: true
   SAVE_HEATMAPS_GT: true

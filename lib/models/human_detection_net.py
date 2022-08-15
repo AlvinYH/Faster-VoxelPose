@@ -15,12 +15,14 @@ class ProposalLayer(nn.Module):
     def __init__(self, cfg):
         super(ProposalLayer, self).__init__()
         self.max_people = cfg.CAPTURE_SPEC.MAX_PEOPLE
+        self.min_score = cfg.CAPTURE_SPEC.MIN_SCORE
+        '''
         self.space_size = torch.tensor(cfg.CAPTURE_SPEC.SPACE_SIZE)
         self.space_center = torch.tensor(cfg.CAPTURE_SPEC.SPACE_CENTER)
         self.voxels_per_axis = torch.tensor(cfg.CAPTURE_SPEC.VOXELS_PER_AXIS)
-        self.min_score = cfg.CAPTURE_SPEC.MIN_SCORE
         self.scale = None
         self.bias = None
+        '''
 
     def filter_proposal(self, topk_index, bbox_preds, gt_3d, gt_bbox, num_person):
         batch_size = topk_index.shape[0]
@@ -41,6 +43,7 @@ class ProposalLayer(nn.Module):
                     bbox_preds[i, k] = gt_bbox[i, proposal2gt[i, k].long()]
         return proposal2gt
 
+    '''
     def get_real_loc(self, index):
         device = index.device
         if self.voxels_per_axis.device != device:
@@ -55,11 +58,12 @@ class ProposalLayer(nn.Module):
         
         loc = index.float() * self.scale + self.bias
         return loc
+    '''
             
     def forward(self, topk_index, topk_confs, match_bbox_preds, meta):
         device = topk_index.device
         batch_size = topk_index.shape[0]
-        topk_index = self.get_real_loc(topk_index)
+        # topk_index = self.get_real_loc(topk_index)
 
         proposal_centers = torch.zeros(batch_size, self.max_people, 7, device=device)
         proposal_centers[:, :, 0:3] = topk_index
@@ -80,9 +84,11 @@ class ProposalLayer(nn.Module):
 class HumanDetectionNet(nn.Module):
     def __init__(self, cfg):
         super(HumanDetectionNet, self).__init__()
+        '''
         self.space_size = cfg.CAPTURE_SPEC.SPACE_SIZE
         self.space_center = cfg.CAPTURE_SPEC.SPACE_CENTER
         self.voxels_per_axis = cfg.CAPTURE_SPEC.VOXELS_PER_AXIS
+        '''
         self.max_people = cfg.CAPTURE_SPEC.MAX_PEOPLE
 
         self.project_layer = ProjectLayer(cfg)
@@ -95,8 +101,7 @@ class HumanDetectionNet(nn.Module):
         num_joints = heatmaps[0].shape[1]
 
         # construct feature cubes
-        feature_cubes = self.project_layer(heatmaps, meta, self.space_size, self.space_center, 
-                                           self.voxels_per_axis)                                           
+        feature_cubes = self.project_layer(heatmaps, meta)                                           
 
         # generate 2d proposals
         proposal_heatmaps_2d, bbox_preds = self.center_net(feature_cubes)
@@ -108,7 +113,7 @@ class HumanDetectionNet(nn.Module):
         
         # extract the matched 1d features and feed them into 1d CNN
         feature_1d = torch.gather(torch.flatten(feature_cubes, 2, 3).permute(0, 2, 1, 3), dim=1,\
-                                  index=topk_2d_flatten_index.view(batch_size, -1, 1, 1).repeat(1, 1, num_joints, self.voxels_per_axis[2]))
+                                  index=topk_2d_flatten_index.view(batch_size, -1, 1, 1).repeat(1, 1, num_joints, feature_cubes.shape[4]))
         proposal_heatmaps_1d = self.c2c_net(torch.flatten(feature_1d, 0, 1)).view(batch_size, self.max_people, -1)
         topk_1d_confs, topk_1d_index = proposal_heatmaps_1d.detach().topk(1)
 

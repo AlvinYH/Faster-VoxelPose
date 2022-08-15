@@ -29,8 +29,6 @@ class SoftArgmaxLayer(nn.Module):
 class JointLocalizationNet(nn.Module):
     def __init__(self, cfg):
         super(JointLocalizationNet, self).__init__()
-        self.voxels_per_axis = cfg.INDIVIDUAL_SPEC.VOXELS_PER_AXIS
-        self.whole_space_center = torch.tensor(cfg.CAPTURE_SPEC.SPACE_CENTER)
         self.conv_net = P2PNet(cfg.DATASET.NUM_JOINTS, cfg.DATASET.NUM_JOINTS)
         self.weight_net = WeightNet(cfg)
         self.project_layer = ProjectLayer(cfg)
@@ -69,28 +67,19 @@ class JointLocalizationNet(nn.Module):
                 continue
             
             # construct person-specific feature cubes
-            cubes, grids = self.project_layer(heatmaps, i, meta, self.voxels_per_axis, proposal_centers[i, mask[i]])
+            cubes, offset = self.project_layer(heatmaps, i, meta, proposal_centers[i, mask[i]])
             
             # project to orthogonal planes and extract joint features
             input = torch.cat([torch.max(cubes, dim=4)[0], torch.max(cubes, dim=3)[0], 
                                torch.max(cubes, dim=2)[0]])
             joint_features = torch.stack(torch.chunk(self.conv_net(input), 3), dim=0)
             
-            pose_preds = self.soft_argmax_layer(joint_features, grids)
-
-            # add offset relative to the space center
-            if self.whole_space_center.device != device:
-                self.whole_space_center = self.whole_space_center.to(device)
-            offset = (proposal_centers[i, mask[i], :3] - self.whole_space_center).unsqueeze(1)
-
-            pose_preds[0] += offset[:, :, :2]
-            pose_preds[1] += offset[:, :, ::2]
-            pose_preds[2] += offset[:, :, 1:]
+            pose_preds = self.soft_argmax_layer(joint_features, self.project_layer.center_grid)
 
             # compute fusion weight and obtain final prediction
             weights = self.weight_net(joint_features)
             fused_pose_preds = self.fuse_pose_preds(pose_preds, weights)
-            all_fused_pose_preds[i, mask[i]] = fused_pose_preds
+            all_fused_pose_preds[i, mask[i]] = fused_pose_preds + offset.reshape(-1, 1, 3)
             all_pose_preds[:, i, mask[i]] = pose_preds
             
         return all_fused_pose_preds, all_pose_preds

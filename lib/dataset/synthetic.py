@@ -123,7 +123,7 @@ class Synthetic(JointsDataset):
 
             for k, cam in self.cameras.items():
                 self.db.append({
-                    'key': '0',
+                    'seq': 'synthetic',
                     'camera': cam,
                     'joints_3d': joints_3d,
                     'joints_3d_vis': joints_3d_vis

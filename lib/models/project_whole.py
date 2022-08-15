@@ -14,11 +14,15 @@ from utils.transforms import affine_transform_pts_cuda as do_transform
 class ProjectLayer(nn.Module):
     def __init__(self, cfg):
         super(ProjectLayer, self).__init__()
-        self.distort = cfg.DISTORT_IMAGE
         self.image_size = cfg.NETWORK.IMAGE_SIZE
+        self.heatmap_size = cfg.NETWORK.HEATMAP_SIZE
         self.ori_image_width = cfg.DATASET.ORI_IMAGE_WIDTH
         self.ori_image_height = cfg.DATASET.ORI_IMAGE_HEIGHT
-        self.heatmap_size = cfg.NETWORK.HEATMAP_SIZE
+
+        self.space_size = cfg.CAPTURE_SPEC.SPACE_SIZE
+        self.space_center = cfg.CAPTURE_SPEC.SPACE_CENTER
+        self.voxels_per_axis = cfg.CAPTURE_SPEC.VOXELS_PER_AXIS
+
         self.grid = None
         self.sample_grid = {}
 
@@ -62,37 +66,35 @@ class ProjectLayer(nn.Module):
         sample_grid = torch.clamp(sample_grid.view(1, 1, nbins, 2), -1.1, 1.1)
         return sample_grid
         
-    def compute_voxel_features(self, heatmaps, meta, space_size, space_center, voxels_per_axis):
+    def compute_voxel_features(self, heatmaps, meta):
         device = heatmaps[0].device
         batch_size = heatmaps[0].shape[0]
         num_joints = heatmaps[0].shape[1]
-        nbins = voxels_per_axis[0] * voxels_per_axis[1] * voxels_per_axis[2]
+        nbins = self.voxels_per_axis[0] * self.voxels_per_axis[1] * self.voxels_per_axis[2]
         n = len(heatmaps)
         cubes = torch.zeros(batch_size, num_joints, 1, nbins, device=device)
         w, h = self.heatmap_size
         
         for i in range(batch_size):
-            curr_key = meta[0]['key'][i]
-            if curr_key not in self.sample_grid:
-                # project all at once
-                print("add key", curr_key)
+            curr_seq = meta[0]['seq'][i]
+            if curr_seq not in self.sample_grid:
+                print("=> Save the sampling grid in HDN for sequence", curr_seq)
                 sample_grids = torch.zeros(n, 1, nbins, 2, device=device)
                 for c in range(n):
                     sample_grid = self.project_grid(meta, i, self.grid, w, h, c, nbins, device)
                     sample_grids[c] = sample_grid.squeeze(0)
-                self.sample_grid[curr_key] = sample_grids
+                self.sample_grid[curr_seq] = sample_grids
 
-            shared_sample_grid = self.sample_grid[curr_key]
+            shared_sample_grid = self.sample_grid[curr_seq]
             cubes[i] = torch.mean(F.grid_sample(heatmaps[:, i], shared_sample_grid, align_corners=True), dim=0).squeeze(0)
             
         cubes = cubes.clamp(0.0, 1.0)
-        cubes = cubes.view(batch_size, num_joints, voxels_per_axis[0], voxels_per_axis[1], voxels_per_axis[2]) 
+        cubes = cubes.view(batch_size, num_joints, self.voxels_per_axis[0], self.voxels_per_axis[1], self.voxels_per_axis[2]) 
         return cubes
 
-    def forward(self, heatmaps, meta, space_size, space_center, voxels_per_axis):
-        device = heatmaps[0].device
+    def forward(self, heatmaps, meta):
         if self.grid is None:
-            self.compute_grid(space_size, space_center, voxels_per_axis, device=device)
+            self.compute_grid(self.space_size, self.space_center, self.voxels_per_axis, device=heatmaps[0].device)
 
-        cubes = self.compute_voxel_features(heatmaps, meta, space_size, space_center, voxels_per_axis)
+        cubes = self.compute_voxel_features(heatmaps, meta)
         return cubes
