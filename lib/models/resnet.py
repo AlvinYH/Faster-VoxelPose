@@ -123,7 +123,7 @@ class ResNet(nn.Module):
 
         self.final_layer = nn.Conv2d(
             in_channels=cfg.RESNET.NUM_DECONV_FILTERS[-1],
-            out_channels=cfg.DATASET.NUM_JOINTS,
+            out_channels=cfg.NETWORK.NUM_JOINTS,
             kernel_size=cfg.RESNET.FINAL_CONV_KERNEL,
             stride=1,
             padding=1 if cfg.RESNET.FINAL_CONV_KERNEL == 3 else 0

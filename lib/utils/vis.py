@@ -12,7 +12,7 @@ matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 
 from utils.transforms import get_affine_transform, affine_transform
-from utils.cameras_cpu import project_pose
+from utils.cameras import project_pose
 
 # coco17
 LIMBS17 = [[0, 1], [0, 2], [1, 2], [1, 3], [2, 4], [3, 5], [4, 6], [5, 7], [7, 9], [6, 8], [8, 10], [5, 11], [11, 13], [13, 15],
@@ -72,9 +72,6 @@ def save_multi_batch_heatmaps(config, inputs, heatmaps, prefix):
         save_batch_heatmaps(inputs[k], heatmaps[k], file_name, True)
 
 def save_debug_2d_images(config, meta, final_poses, poses, proposal_centers, prefix):
-    if not config.DEBUG.DEBUG:
-        return
-
     basename = os.path.basename(prefix)
     dirname = os.path.dirname(prefix)
     dirname1 = os.path.join(dirname, '2d_joints_plane')
@@ -266,7 +263,7 @@ def save_image_with_projected_poses(config, batch_image, batch_poses, meta, file
                 continue
 
             color = np.flip(np.array(matplotlib.colors.to_rgb(colors[int(n % 10)]))) * 255
-            pose_2d = project_pose(poses[:, :3], camera, distort=config.DISTORT_IMAGE)
+            pose_2d = project_pose(poses[:, :3], camera)
               
             for j in range(num_joints):
                 pose_2d[j] = affine_transform(pose_2d[j], trans)

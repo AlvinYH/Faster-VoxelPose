@@ -49,11 +49,11 @@ class WeightNet(nn.Module):
     def __init__(self, cfg):
         super(WeightNet, self).__init__()
         self.voxels_per_axis = cfg.INDIVIDUAL_SPEC.VOXELS_PER_AXIS
-        self.num_joints = cfg.DATASET.NUM_JOINTS
+        self.num_joints = cfg.NETWORK.NUM_JOINTS
         self.channel_num_per_joint = 64
         self.heatmap_feature_net = nn.Sequential(
-            nn.Conv2d(1, 64, 3, stride=1, padding=1),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(1, self.channel_num_per_joint, 3, stride=1, padding=1),
+            nn.BatchNorm2d(self.channel_num_per_joint),
             nn.MaxPool2d(2),
             nn.ReLU(inplace=True)
         )
@@ -66,6 +66,7 @@ class WeightNet(nn.Module):
         )
 
     def forward(self, x):
+        # x: [3, num_people, num_channels, height, width]
         x = torch.flatten(x, 0, 1)
         batch_size = x.shape[0]
         num_joints = self.num_joints

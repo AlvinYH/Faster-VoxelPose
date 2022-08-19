@@ -24,7 +24,6 @@ config.OUTPUT_DIR = 'output'
 config.LOG_DIR = 'log'
 config.DATA_DIR = 'data'
 config.MODEL = 'voxelpose'
-config.DISTORT_IMAGE = True
 
 # higherhrnet definition
 config.HIGHER_HRNET = edict()
@@ -83,12 +82,9 @@ config.NETWORK = edict()
 config.NETWORK.PRETRAINED_BACKBONE = ''
 config.NETWORK.HEATMAP_SIZE = np.array([80, 80])
 config.NETWORK.IMAGE_SIZE = np.array([320, 320])
+config.NETWORK.NUM_JOINTS = 17
 config.NETWORK.SIGMA = 2
 config.NETWORK.BETA = 100
-config.NETWORK.TARGET_TYPE = 'gaussian'
-
-config.LOSS = edict()
-config.LOSS.USE_TARGET_WEIGHT = True
 
 # DATASET related params
 config.DATASET = edict()
@@ -96,12 +92,12 @@ config.DATASET.TRAIN_DATASET = 'campus_synthetic'
 config.DATASET.TRAIN_HEATMAP_SRC = 'image'
 config.DATASET.TEST_DATASET = 'campus'
 config.DATASET.TEST_HEATMAP_SRC = 'image'
+config.DATASET.DATA_AUGMENTATION = False
 config.DATASET.COLOR_RGB = False
 config.DATASET.CAMERA_NUM = 3
 config.DATASET.ORI_IMAGE_WIDTH = 360
 config.DATASET.ORI_IMAGE_HEIGHT = 288
 config.DATASET.ROOTIDX = 2
-config.DATASET.NUM_JOINTS = 17
 config.DATASET.ROOT = ''
 
 # Synthetic dataset
@@ -109,8 +105,8 @@ config.SYNTHETIC = edict()
 config.SYNTHETIC.CAMERA_FILE = ''
 config.SYNTHETIC.POSE_FILE = ''
 config.SYNTHETIC.MAX_PEOPLE = 10
-config.SYNTHETIC.RANDOM_SCALE_HEATMAP = True
-config.SYNTHETIC.RANDOM_ERASE_HEATMAP = True
+config.SYNTHETIC.NUM_DATA = 1000
+config.SYNTHETIC.DATA_AUGMENTATION = True
 
 # train
 config.TRAIN = edict()
@@ -135,14 +131,6 @@ config.TEST = edict()
 config.TEST.BATCH_SIZE = 8
 config.TEST.STATE = 'best'
 config.TEST.MODEL_FILE = ''
-
-# debug
-config.DEBUG = edict()
-config.DEBUG.DEBUG = True
-config.DEBUG.SAVE_BATCH_IMAGES_GT = True
-config.DEBUG.SAVE_BATCH_IMAGES_PRED = True
-config.DEBUG.SAVE_HEATMAPS_GT = True
-config.DEBUG.SAVE_HEATMAPS_PRED = True
 
 # specification of the whole motion capture space
 config.CAPTURE_SPEC = edict()

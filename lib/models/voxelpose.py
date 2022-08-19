@@ -19,30 +19,28 @@ class VoxelPoseNet(nn.Module):
     def __init__(self, backbone, cfg):
         super(VoxelPoseNet, self).__init__()
         self.max_people = cfg.CAPTURE_SPEC.MAX_PEOPLE
-        self.num_joints = cfg.DATASET.NUM_JOINTS
+        self.num_joints = cfg.NETWORK.NUM_JOINTS
        
         self.backbone = backbone
         self.pose_net = HumanDetectionNet(cfg)
         self.joint_net = JointLocalizationNet(cfg)
 
-    
-    def forward(self, views=None, meta=None, targets=None, input_heatmaps=None):
+    def forward(self, views=None, meta=None, targets=None, input_heatmaps=None, cameras=None, resize_transform=None):
+        # views: [batch_size, num_views, num_channels, height, width]
+        # input_heatmaps: [batch_size, num_views, num_joints, hm_height, hm_width]
         if views is not None:
-            input_heatmaps = torch.stack([self.backbone(view) for view in views], dim=0)
-        else:
-            input_heatmaps = torch.stack(input_heatmaps, dim=0)
-            
-        batch_size = input_heatmaps[0].shape[0]
+            num_views = views.shape[1]
+            input_heatmaps = torch.stack([self.backbone(views[:, c]) for c in range(num_views)], dim=1)
+        batch_size = input_heatmaps.shape[0]
  
         # human detection network
         proposal_heatmaps_2d, proposal_heatmaps_1d, proposal_centers, \
-                              bbox_preds = self.pose_net(input_heatmaps, meta)
-
+                              bbox_preds = self.pose_net(input_heatmaps, meta, cameras, resize_transform)
         mask = (proposal_centers[:, :, 3] >= 0)
 
         # joint localization network
-        fused_poses, poses = self.joint_net(meta, input_heatmaps, proposal_centers.detach(), mask)
-        
+        fused_poses, poses = self.joint_net(meta, input_heatmaps, proposal_centers.detach(), mask, cameras, resize_transform)
+
         # compute the training loss
         if self.training:
             assert targets is not None, 'proposal ground truth not set'
@@ -64,9 +62,9 @@ class VoxelPoseNet(nn.Module):
             del proposal_heatmaps_2d, proposal_heatmaps_1d, bbox_preds
             
             # weighted L1 loss of joint localization
-            joints_3d = torch.gather(meta[0]['joints_3d'].float(), dim=1, index=proposal2gt.long().view\
+            joints_3d = torch.gather(meta['joints_3d'].float(), dim=1, index=proposal2gt.long().view\
                                              (batch_size, -1, 1, 1).repeat(1, 1, self.num_joints, 3))[mask]
-            joints_vis = torch.gather(meta[0]['joints_3d_vis'].float(), dim=1, index=proposal2gt.long().view\
+            joints_vis = torch.gather(meta['joints_3d_vis'].float(), dim=1, index=proposal2gt.long().view\
                                              (batch_size, -1, 1).repeat(1, 1, self.num_joints))[mask].unsqueeze(2)
             loss_joint = F.l1_loss(poses[0][mask] * joints_vis, joints_3d[:, :, :2] * joints_vis, reduction="mean") +\
                          F.l1_loss(poses[1][mask] * joints_vis, joints_3d[:, :, ::2] * joints_vis, reduction="mean") +\
@@ -83,7 +81,6 @@ class VoxelPoseNet(nn.Module):
         else:
             loss_dict = None
 
-        # confidence score
         fused_poses = torch.cat([fused_poses, proposal_centers[:, :, 3:5].reshape(batch_size,\
                                  -1, 1, 2).repeat(1, 1, self.num_joints, 1)], dim=3)
         return fused_poses, poses, proposal_centers.detach(), loss_dict, input_heatmaps

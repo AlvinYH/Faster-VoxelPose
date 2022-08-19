@@ -3,11 +3,10 @@ CUDNN:
   DETERMINISTIC: false
   ENABLED: true
 
-DISTORT_IMAGE: true
 BACKBONE: 'resnet'
 MODEL: 'voxelpose'
 DATA_DIR: ''
-GPUS: '1'
+GPUS: '3'
 OUTPUT_DIR: 'output'
 LOG_DIR: 'log'
 WORKERS: 4
@@ -22,38 +21,33 @@ DATASET:
   TEST_HEATMAP_SRC: 'image'
   ROOTIDX: 2
   CAMERA_NUM: 5
-  NUM_JOINTS: 15
   ORI_IMAGE_WIDTH: 1920
   ORI_IMAGE_HEIGHT: 1080
 
 NETWORK:
   PRETRAINED_BACKBONE: "models/pose_resnet50_panoptic.pth.tar"
-  TARGET_TYPE: gaussian
   IMAGE_SIZE:
   - 960
   - 512
   HEATMAP_SIZE:
   - 240
   - 128
+  NUM_JOINTS: 15
   SIGMA: 3
 
-LOSS:
-  USE_TARGET_WEIGHT: true
 TRAIN:
   BATCH_SIZE: 8
   SHUFFLE: true
   BEGIN_EPOCH: 0
-  END_EPOCH: 10
-  RESUME: false
+  END_EPOCH: 20
+  RESUME: true
   OPTIMIZER: adam
   LR: 0.0001
+
 TEST:
   MODEL_FILE: 'model_best.pth.tar'
-  BATCH_SIZE: 16
-DEBUG:
-  DEBUG: true
-  SAVE_HEATMAPS_GT: true
-  SAVE_HEATMAPS_PRED: true
+  BATCH_SIZE: 8
+
 CAPTURE_SPEC:
   SPACE_SIZE:
     - 8000.0
@@ -69,6 +63,7 @@ CAPTURE_SPEC:
     - 20
   MAX_PEOPLE: 10
   MIN_SCORE: 0.3
+  
 INDIVIDUAL_SPEC:
   SPACE_SIZE:
     - 2000.0

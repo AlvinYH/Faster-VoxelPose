@@ -7,7 +7,7 @@ import logging
 import os
 import torch
 
-from utils.vis import save_debug_2d_images, save_multi_image_with_projected_poses, save_multi_batch_heatmaps
+from utils.vis import save_debug_2d_images
 
 logger = logging.getLogger(__name__)
 
@@ -30,12 +30,19 @@ def train_3d(config, model, optimizer, loader, epoch, output_dir, writer_dict, d
     accu_loss = 0
 
     end = time.time()
+
+    # loading constants of the dataset
+    cameras = loader.dataset.cameras
+    resize_transform = torch.as_tensor(loader.dataset.resize_transform, dtype=torch.float, device=device)
+
     for i, (inputs, targets, meta, input_heatmap) in enumerate(loader):
         data_time.update(time.time() - end)
         if config.DATASET.TRAIN_HEATMAP_SRC == 'image':
-            final_poses, poses, proposal_centers, loss_dict, input_heatmap = model(views=inputs, meta=meta, targets=targets[0])
+            final_poses, poses, proposal_centers, loss_dict, input_heatmap = model(views=inputs, meta=meta, targets=targets,\
+                                                                             cameras=cameras, resize_transform=resize_transform)
         else:
-            final_poses, poses, proposal_centers, loss_dict, _ = model(meta=meta, targets=targets[0], input_heatmaps=input_heatmap)
+            final_poses, poses, proposal_centers, loss_dict, _ = model(meta=meta, targets=targets, input_heatmaps=input_heatmap,\
+                                                                       cameras=cameras, resize_transform=resize_transform)
 
         loss = loss_dict["total"]
         loss_2d = loss_dict["2d_heatmaps"]
@@ -61,13 +68,14 @@ def train_3d(config, model, optimizer, loader, epoch, output_dir, writer_dict, d
             accu_loss = 0.0
         else:
             accu_loss += (loss_2d + loss_1d + loss_bbox) / accumulation_steps
-        
 
+        del loss_joint, loss_2d, loss_1d, loss_bbox
+        
         batch_time.update(time.time() - end)
         end = time.time()
 
         if i % config.PRINT_FREQ == 0:
-            gpu_memory_usage = torch.cuda.memory_allocated(0)
+            gpu_memory_usage = torch.cuda.memory_allocated(device)
             msg = 'Epoch: [{0}][{1}/{2}]\t' \
                   'Time: {batch_time.val:.3f}s ({batch_time.avg:.3f}s)\t' \
                   'Speed: {speed:.1f} samples/s\t' \
@@ -95,15 +103,17 @@ def train_3d(config, model, optimizer, loader, epoch, output_dir, writer_dict, d
             writer_dict['train_global_steps'] = global_steps + 1
             
             prefix = '{}_{:08}'.format(os.path.join(output_dir, 'train'), i)
-            save_debug_2d_images(config, meta[0], final_poses, poses, proposal_centers, prefix)
-            # save_multi_image_with_projected_poses(config, inputs, final_poses, meta, prefix)
-            # save_multi_batch_heatmaps(config, inputs, input_heatmap, prefix)
+            save_debug_2d_images(config, meta, final_poses, poses, proposal_centers, prefix)
 
 
-def validate_3d(config, model, loader, output_dir, has_evaluate_function=False):
+def validate_3d(config, model, loader, output_dir, has_evaluate_function=False, device=torch.device('cuda')):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     model.eval()
+
+    # loading constants of the dataset
+    cameras = loader.dataset.cameras
+    resize_transform = torch.as_tensor(loader.dataset.resize_transform, dtype=torch.float, device=device)
 
     all_final_poses = []
     with torch.no_grad():
@@ -111,9 +121,11 @@ def validate_3d(config, model, loader, output_dir, has_evaluate_function=False):
         for i, (inputs, targets, meta, input_heatmap) in enumerate(loader):
             data_time.update(time.time() - end)
             if config.DATASET.TRAIN_HEATMAP_SRC == 'image':
-                final_poses, poses, proposal_centers, _, input_heatmap = model(views=inputs, meta=meta, targets=targets[0])
+                final_poses, poses, proposal_centers, _, input_heatmap = model(views=inputs, meta=meta, targets=targets,\
+                                                                               cameras=cameras, resize_transform=resize_transform)
             else:
-                final_poses, poses, proposal_centers, _, _ = model(meta=meta, targets=targets[0], input_heatmaps=input_heatmap)
+                final_poses, poses, proposal_centers, _, _ = model(meta=meta, targets=targets, input_heatmaps=input_heatmap,\
+                                                                   cameras=cameras, resize_transform=resize_transform)
            
             final_poses = final_poses.detach().cpu().numpy()
             for b in range(final_poses.shape[0]):
@@ -134,9 +146,7 @@ def validate_3d(config, model, loader, output_dir, has_evaluate_function=False):
                 logger.info(msg)
 
                 prefix = '{}_{:08}'.format(os.path.join(output_dir, 'validation'), i)
-                save_debug_2d_images(config, meta[0], final_poses, poses, proposal_centers, prefix)
-                # save_multi_image_with_projected_poses(config, inputs, final_poses, meta, prefix)
-                # save_multi_batch_heatmaps(config, inputs, input_heatmap, prefix)
+                save_debug_2d_images(config, meta, final_poses, poses, proposal_centers, prefix)
     
     if not has_evaluate_function:
         return 0.0

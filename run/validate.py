@@ -18,10 +18,9 @@ import os
 from tqdm import tqdm
 
 import _init_paths
-from core.config import config
-from core.config import update_config
-from utils.utils import create_logger, load_backbone
-from utils.vis import save_debug_2d_images, save_multi_image_with_projected_poses, save_multi_batch_heatmaps
+from core.config import config, update_config
+from utils.utils import create_logger
+from utils.vis import save_debug_2d_images
 import dataset
 import models
 
@@ -31,7 +30,7 @@ def parse_args():
     parser.add_argument(
         '--cfg', help='experiment configure file name', required=True, type=str)
 
-    args, rest = parser.parse_known_args()
+    args, _ = parser.parse_known_args()
     update_config(args.cfg)
 
     return args
@@ -49,7 +48,7 @@ def main():
         mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
     test_dataset = eval('dataset.' + config.DATASET.TEST_DATASET)(
-        config, False, False,
+        config, False,
         transforms.Compose([
             transforms.ToTensor(),
             normalize,
@@ -81,23 +80,25 @@ def main():
 
     print("=> Validating...")
     model.eval()
+
+    # loading constants of the dataset
+    cameras = test_loader.dataset.cameras
+    resize_transform = torch.as_tensor(test_loader.dataset.resize_transform, dtype=torch.float, device='cuda:{}'.format(model.device_ids[0]))
+
     with torch.no_grad():
         all_final_poses = []
-        for i, (inputs, targets, meta, input_heatmap) in enumerate(tqdm(test_loader)):
+        for i, (inputs, _, meta, input_heatmap) in enumerate(tqdm(test_loader)):
             if config.DATASET.TRAIN_HEATMAP_SRC == 'image':
-                final_poses, poses, proposal_centers, _, input_heatmap = model(views=inputs, meta=meta, targets=targets[0])
+                final_poses, poses, proposal_centers, _, input_heatmap = model(views=inputs, meta=meta, cameras=cameras, resize_transform=resize_transform)
             else:
-                final_poses, poses, proposal_centers, _, _ = model(meta=meta, targets=targets[0], input_heatmaps=input_heatmap)
+                final_poses, poses, proposal_centers, _, _ = model(meta=meta, input_heatmaps=input_heatmap, cameras=cameras, resize_transform=resize_transform)
             
             final_poses = final_poses.detach().cpu().numpy()
             for b in range(final_poses.shape[0]):
                 all_final_poses.append(final_poses[b])
 
-            '''
             prefix = '{}_{:08}'.format(os.path.join(final_output_dir, 'validation'), i)
-            save_multi_image_with_projected_poses(config, inputs, final_poses, meta, prefix)
             save_debug_2d_images(config, meta[0], final_poses, poses, proposal_centers, prefix)
-            '''
 
     if test_dataset.has_evaluate_function:
         metric, msg = test_loader.dataset.evaluate(all_final_poses)

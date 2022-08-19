@@ -16,21 +16,22 @@ import random
 import json_tricks as json
 
 from utils.transforms import rotate_points
-from utils.cameras_cpu import project_pose
+from utils.cameras import project_pose_cpu
 from dataset.JointsDataset import JointsDataset
 
 logger = logging.getLogger(__name__)
 
 
 class Synthetic(JointsDataset):
-    def __init__(self, cfg, is_train=True, add_noise_to_heatmap=False, transform=None):
-        super().__init__(cfg, is_train, True, transform)
+    def __init__(self, cfg, is_train=True, transform=None):
+        super().__init__(cfg, is_train, transform)
 
         self.has_evaluate_function = False
-        self.num_of_data = 100
+        self.num_of_data = cfg.SYNTHETIC.NUM_DATA
+        self.data_augmentation = cfg.SYNTHETIC.DATA_AUGMENTATION
 
-        self.distort = cfg.DISTORT_IMAGE
         self.max_people = cfg.CAPTURE_SPEC.MAX_PEOPLE
+        self.num_joints = cfg.NETWORK.NUM_JOINTS
 
         self.camera_file = cfg.SYNTHETIC.CAMERA_FILE
         self.pose_file = cfg.SYNTHETIC.POSE_FILE
@@ -77,11 +78,12 @@ class Synthetic(JointsDataset):
         for id, cam in cameras.items():
             cameras_int_key[int(id)] = cam
 
-        return cameras_int_key
+        our_cameras = dict()
+        our_cameras['synthetic'] = cameras_int_key
+        return our_cameras
 
     def _get_db(self):
-        db = []
-        for i in range(self.num_of_data):
+        for _ in range(self.num_of_data):
             bbox_list = []
             center_list = []
             nposes = np.random.choice(range(self.max_synthetic_people)) + 1
@@ -90,6 +92,7 @@ class Synthetic(JointsDataset):
             joints_3d_vis = np.array([p['vis'][:, -1] for p in select_poses])
 
             for n in range(nposes):
+                assert len(joints_3d[n]) == self.num_joints, "inconsistent number of joints"
                 points = joints_3d[n][:, :2].copy()
                 if isinstance(self.root_id, int):
                     center = points[self.root_id]
@@ -101,8 +104,7 @@ class Synthetic(JointsDataset):
                 loop = 0
                 while loop < 100:
                     human_center = self.get_random_human_center(center_list)
-                    human_xy = rotate_points(
-                        points, center, rotation) - center + human_center
+                    human_xy = rotate_points(points, center, rotation) - center + human_center
 
                     if self.isvalid(
                             human_center,
@@ -121,26 +123,19 @@ class Synthetic(JointsDataset):
                     bbox_list.append(self.calc_bbox(human_xy, joints_3d_vis[n]))
                     joints_3d[n][:, :2] = human_xy
 
-            for k, cam in self.cameras.items():
-                self.db.append({
-                    'seq': 'synthetic',
-                    'camera': cam,
-                    'joints_3d': joints_3d,
-                    'joints_3d_vis': joints_3d_vis
-                })
+
+            self.db.append({
+                'seq': 'synthetic',
+                'joints_3d': joints_3d,
+                'joints_3d_vis': joints_3d_vis
+            })
 
         super()._rebuild_db()
         logger.info("=> {} synthetic images from {} views loaded".format(len(self.db), self.num_views))
-        return db
+        return
 
     def __getitem__(self, idx):
-        input, target, meta, input_heatmap = [], [], [], []
-        for k in range(self.num_views):
-            i, t, m, ih = super().__getitem__(self.num_views * idx + k)
-            input.append(i)
-            target.append(t)
-            meta.append(m)
-            input_heatmap.append(ih)
+        input, target, meta, input_heatmap = super().__getitem__(idx)
         return input, target, meta, input_heatmap
 
     def __len__(self):
@@ -166,11 +161,10 @@ class Synthetic(JointsDataset):
 
         new_center_us = new_center.reshape(1, -1)
         vis = 0
-        for k, cam in self.cameras.items():
+        for _, cam in self.cameras['synthetic'].items():
             width = self.ori_image_width
             height = self.ori_image_height
-            loc_2d = project_pose(
-                np.hstack((new_center_us, [[1000.0]])), cam, distort=self.distort)
+            loc_2d = project_pose_cpu(np.hstack((new_center_us, [[1000.0]])), cam)
             if 10 < loc_2d[0, 0] < width - 10 and 10 < loc_2d[0, 1] < height - 10:
                 vis += 1
 

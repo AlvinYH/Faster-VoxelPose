@@ -20,12 +20,9 @@ import torchvision.transforms as transforms
 from tensorboardX import SummaryWriter
 
 import _init_paths
-from core.config import config
-from core.config import update_config
+from core.config import config, update_config
 from core.function import train_3d, validate_3d
-from utils.utils import create_logger
-from utils.utils import save_checkpoint, load_checkpoint, load_model_state
-from utils.utils import load_backbone
+from utils.utils import create_logger, save_checkpoint, load_checkpoint, load_backbone
 import dataset
 import models
 
@@ -35,8 +32,7 @@ def parse_args():
     parser.add_argument(
         '--cfg', help='experiment configure file name', required=True, type=str)
 
-    args, rest = parser.parse_known_args()
-
+    args, _ = parser.parse_known_args()
     return args
 
 
@@ -63,7 +59,7 @@ def get_data_loaders(config):
         mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
     train_dataset = eval('dataset.' + config.DATASET.TRAIN_DATASET)(
-        config, True, True,
+        config, True,
         transforms.Compose([
             transforms.ToTensor(),
             normalize,
@@ -77,7 +73,7 @@ def get_data_loaders(config):
         pin_memory=True)
 
     test_dataset = eval('dataset.' + config.DATASET.TEST_DATASET)(
-        config, False, False,
+        config, False,
         transforms.Compose([
             transforms.ToTensor(),
             normalize,
@@ -97,8 +93,7 @@ def main():
     args = parse_args()
     update_config(args.cfg)
 
-    logger, final_output_dir, tb_log_dir = create_logger(
-        config, args.cfg, 'train')
+    logger, final_output_dir, tb_log_dir = create_logger(config, args.cfg, 'train')
     logger.info(pprint.pformat(args))
     logger.info(pprint.pformat(config))
 
@@ -140,13 +135,12 @@ def main():
     for epoch in range(start_epoch, end_epoch):
         print('Epoch: {}'.format(epoch))
 
-        train_3d(config, model, optimizer, train_loader,
-                 epoch, final_output_dir, writer_dict)
+        train_3d(config, model, optimizer, train_loader, epoch, final_output_dir, writer_dict)
 
         best_model = True
         if test_loader != None and test_dataset.has_evaluate_function:
-            precision = validate_3d(
-                config, model, test_loader, final_output_dir, test_dataset.has_evaluate_function)
+            precision = validate_3d(config, model, test_loader, final_output_dir,\
+                                    test_dataset.has_evaluate_function)
 
             if precision >= best_precision:
                 best_precision = precision
@@ -163,10 +157,8 @@ def main():
             'optimizer': optimizer.state_dict(),
         }, best_model, final_output_dir)
 
-    final_model_state_file = os.path.join(final_output_dir,
-                                          'final_state.pth.tar')
-    logger.info('saving final model state to {}'.format(
-        final_model_state_file))
+    final_model_state_file = os.path.join(final_output_dir, 'final_state.pth.tar')
+    logger.info('saving final model state to {}'.format(final_model_state_file))
     torch.save(model.module.state_dict(), final_model_state_file)
 
     writer_dict['writer'].close()
