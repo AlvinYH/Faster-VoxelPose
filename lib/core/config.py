@@ -7,26 +7,61 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
 import yaml
-
 import numpy as np
 from easydict import EasyDict as edict
 
+
 config = edict()
 
-config.BACKBONE = 'pose_resnet'
-config.GPUS = '0,1'
+# Cudnn related params
+config.CUDNN = edict()
+config.CUDNN.BENCHMARK = True
+config.CUDNN.DETERMINISTIC = False
+config.CUDNN.ENABLED = True
+
+# load setting params
+config.BACKBONE = 'resnet'
+config.DEVICE = 'cuda:0'
 config.WORKERS = 8
 config.PRINT_FREQ = 100
-
 config.OUTPUT_DIR = 'output'
 config.LOG_DIR = 'log'
-config.DATA_DIR = 'data'
 config.MODEL = 'voxelpose'
-config.DISTORT_IMAGE = True
 
-# higherhrnet definition
+# DATASET related params
+config.DATASET = edict()
+config.DATASET.DATADIR = ''
+config.DATASET.COLOR_RGB = False
+config.DATASET.DATA_AUGMENTATION = False
+config.DATASET.TRAIN_DATASET = 'panoptic'
+config.DATASET.TRAIN_HEATMAP_SRC = 'image'
+config.DATASET.TEST_DATASET = 'panoptic'
+config.DATASET.TEST_HEATMAP_SRC = 'image'
+config.DATASET.CAMERA_NUM = 5
+config.DATASET.ORI_IMAGE_SIZE = np.array([1920, 1080])
+config.DATASET.IMAGE_SIZE = np.array([960, 512])
+config.DATASET.HEATMAP_SIZE = np.array([240, 128])
+config.DATASET.NUM_JOINTS = 15
+config.DATASET.ROOT_JOINT_ID = 2
+
+# Synthetic dataset
+config.SYNTHETIC = edict()
+config.SYNTHETIC.CAMERA_FILE = ''
+config.SYNTHETIC.POSE_FILE = ''
+config.SYNTHETIC.MAX_PEOPLE = 10
+config.SYNTHETIC.NUM_DATA = 10000
+config.SYNTHETIC.DATA_AUGMENTATION = True
+
+# NETWORK related params
+config.NETWORK = edict()
+config.NETWORK.PRETRAINED_BACKBONE = ''
+config.NETWORK.NUM_CHANNEL_JOINT_FEAT = 32
+config.NETWORK.NUM_CHANNEL_JOINT_HIDDEN = 64
+config.NETWORK.SIGMA = 3
+config.NETWORK.BETA = 100
+
+# higherhrnet related params
 config.HIGHER_HRNET = edict()
 config.HIGHER_HRNET.PRETRAINED_LAYERS = ['*']
 config.HIGHER_HRNET.FINAL_CONV_KERNEL = 1
@@ -72,77 +107,28 @@ config.RESNET.NUM_DECONV_FILTERS = [256, 256, 256]
 config.RESNET.NUM_DECONV_KERNELS = [4, 4, 4]
 config.RESNET.FINAL_CONV_KERNEL = 1
 
-# Cudnn related params
-config.CUDNN = edict()
-config.CUDNN.BENCHMARK = True
-config.CUDNN.DETERMINISTIC = False
-config.CUDNN.ENABLED = True
-
-# common params for NETWORK
-config.NETWORK = edict()
-config.NETWORK.PRETRAINED_BACKBONE = ''
-config.NETWORK.HEATMAP_SIZE = np.array([80, 80])
-config.NETWORK.IMAGE_SIZE = np.array([320, 320])
-config.NETWORK.SIGMA = 2
-config.NETWORK.BETA = 100
-config.NETWORK.TARGET_TYPE = 'gaussian'
-
-config.LOSS = edict()
-config.LOSS.USE_TARGET_WEIGHT = True
-
-# DATASET related params
-config.DATASET = edict()
-config.DATASET.TRAIN_DATASET = 'campus_synthetic'
-config.DATASET.TRAIN_HEATMAP_SRC = 'image'
-config.DATASET.TEST_DATASET = 'campus'
-config.DATASET.TEST_HEATMAP_SRC = 'image'
-config.DATASET.COLOR_RGB = False
-config.DATASET.CAMERA_NUM = 3
-config.DATASET.ORI_IMAGE_WIDTH = 360
-config.DATASET.ORI_IMAGE_HEIGHT = 288
-config.DATASET.ROOTIDX = 2
-config.DATASET.NUM_JOINTS = 17
-config.DATASET.ROOT = ''
-
-# Synthetic dataset
-config.SYNTHETIC = edict()
-config.SYNTHETIC.CAMERA_FILE = ''
-config.SYNTHETIC.POSE_FILE = ''
-config.SYNTHETIC.MAX_PEOPLE = 10
-config.SYNTHETIC.RANDOM_SCALE_HEATMAP = True
-config.SYNTHETIC.RANDOM_ERASE_HEATMAP = True
-
 # train
 config.TRAIN = edict()
-config.TRAIN.ONLY_3D_MODULE = True
-config.TRAIN.LR_FACTOR = 0.1
-config.TRAIN.LR_STEP = [90, 110]
-config.TRAIN.LR = 0.001
-config.TRAIN.OPTIMIZER = 'adam'
-config.TRAIN.MOMENTUM = 0.9
-config.TRAIN.WD = 0.0001
-config.TRAIN.NESTEROV = False
-config.TRAIN.GAMMA1 = 0.99
-config.TRAIN.GAMMA2 = 0.0
-config.TRAIN.BEGIN_EPOCH = 0
-config.TRAIN.END_EPOCH = 140
-config.TRAIN.RESUME = False
 config.TRAIN.BATCH_SIZE = 8
 config.TRAIN.SHUFFLE = True
+config.TRAIN.BEGIN_EPOCH = 0
+config.TRAIN.END_EPOCH = 10
+config.TRAIN.RESUME = False
+config.TRAIN.OPTIMIZER = 'adam'
+config.TRAIN.LR = 1e-4
+config.TRAIN.LAMBDA_LOSS_2D = 1.0
+config.TRAIN.LAMBDA_LOSS_1D = 1.0
+config.TRAIN.LAMBDA_LOSS_BBOX = 0.1
+config.TRAIN.LAMBDA_LOSS_FUSED = 5.0
+config.TRAIN.VISUALIZATION = True
+config.TRAIN.VIS_TYPE = ['2d_planes', 'image_with_poses', 'heatmaps']
 
-# testing
+# test
 config.TEST = edict()
 config.TEST.BATCH_SIZE = 8
-config.TEST.STATE = 'best'
 config.TEST.MODEL_FILE = ''
-
-# debug
-config.DEBUG = edict()
-config.DEBUG.DEBUG = True
-config.DEBUG.SAVE_BATCH_IMAGES_GT = True
-config.DEBUG.SAVE_BATCH_IMAGES_PRED = True
-config.DEBUG.SAVE_HEATMAPS_GT = True
-config.DEBUG.SAVE_HEATMAPS_PRED = True
+config.TEST.VISUALIZATION = True
+config.TEST.VIS_TYPE = ['2d_planes', 'image_with_poses', 'heatmaps']
 
 # specification of the whole motion capture space
 config.CAPTURE_SPEC = edict()
@@ -156,12 +142,6 @@ config.CAPTURE_SPEC.MIN_SCORE = 0.1
 config.INDIVIDUAL_SPEC = edict()
 config.INDIVIDUAL_SPEC.SPACE_SIZE = np.array([2000.0, 2000.0, 2000.0])
 config.INDIVIDUAL_SPEC.VOXELS_PER_AXIS = np.array([64, 64, 64])
-
-
-config.LIMBS_DEF = [[0, 1], [0, 2], [1, 2], [1, 3], [2, 4],
-                    [3, 5], [4, 6], [5, 7], [7, 9], [6, 8],
-                    [8, 10], [5, 11], [11, 13], [13, 15],
-                    [6, 12], [12, 14], [14, 16], [5, 6], [11, 12]]
 
 
 def _update_dict(k, v):
@@ -218,22 +198,6 @@ def gen_config(config_file):
         yaml.dump(dict(cfg), f, default_flow_style=False)
 
 
-def update_dir(model_dir, log_dir, data_dir):
-    if model_dir:
-        config.OUTPUT_DIR = model_dir
-
-    if log_dir:
-        config.LOG_DIR = log_dir
-
-    if data_dir:
-        config.DATA_DIR = data_dir
-
-    config.DATASET.ROOT = os.path.join(config.DATA_DIR, config.DATASET.ROOT)
-
-    config.NETWORK.PRETRAINED = os.path.join(config.DATA_DIR,
-                                             config.NETWORK.PRETRAINED)
-
-
 def get_model_name(cfg):
     name = '{model}_{num_layers}'.format(
         model=cfg.MODEL, num_layers=cfg.RESNET.NUM_LAYERS)
@@ -241,8 +205,8 @@ def get_model_name(cfg):
         'd{}'.format(num_filters)
         for num_filters in cfg.RESNET.NUM_DECONV_FILTERS)
     full_name = '{height}x{width}_{name}_{deconv_suffix}'.format(
-        height=cfg.NETWORK.IMAGE_SIZE[1],
-        width=cfg.NETWORK.IMAGE_SIZE[0],
+        height=cfg.DATASET.IMAGE_SIZE[1],
+        width=cfg.DATASET.IMAGE_SIZE[0],
         name=name,
         deconv_suffix=deconv_suffix)
 

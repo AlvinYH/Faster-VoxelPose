@@ -17,7 +17,6 @@ import cv2
 import copy
 
 from dataset.JointsDataset import JointsDataset
-from utils.transforms import get_scale, get_affine_transform
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +32,14 @@ TRAIN_LIST = [
     '160906_band2'
     # '160906_band3',
 ]
+VAL_LIST = [
+    '160906_pizza1',
+    '160422_haggling1',
+    '160906_ian5',
+    '160906_band4',
+]
 
-VAL_LIST = ['160906_pizza1', '160422_haggling1', '160906_ian5', '160906_band4']
-
-JOINTS_DEF = {
+panoptic_joints_def = {
     'neck': 0,
     'nose': 1,
     'mid-hip': 2,
@@ -51,7 +54,7 @@ JOINTS_DEF = {
     'r-wrist': 11,
     'r-hip': 12,
     'r-knee': 13,
-    'r-ankle': 14
+    'r-ankle': 14,
 }
 
 panoptic_bones_def = [
@@ -64,11 +67,12 @@ panoptic_bones_def = [
 
 
 class Panoptic(JointsDataset):
-    def __init__(self, cfg, is_train=True, add_noise_to_heatmap=False, transform=None):
-        super().__init__(cfg, is_train, False, transform)
-        self.num_joints = len(JOINTS_DEF)
+    def __init__(self, cfg, is_train=True, transform=None):
+        super().__init__(cfg, is_train, transform)
+        
+        self.num_joints = len(panoptic_joints_def)
         self.num_views = cfg.DATASET.CAMERA_NUM
-        self.root_id = cfg.DATASET.ROOTIDX
+        self.root_id = cfg.DATASET.ROOT_JOINT_ID
 
         self.has_evaluate_function = True
         self.transform = transform
@@ -84,33 +88,30 @@ class Panoptic(JointsDataset):
             self._interval = 12
 
         self.cameras = self._get_cam()
-        self.db_file = 'panoptic_{}_cam{}.pkl'.format(self.image_set, self.num_views)
-        self.db_file = osp.join(self.dataset_root, self.db_file)
+        self.db_file = '{}_meta.pkl'.format(self.image_set, self.num_views)
+        self.db_file = osp.join(self.dataset_dir, self.db_file)
 
         if osp.exists(self.db_file):
             info = pickle.load(open(self.db_file, 'rb'))
             assert info['sequence_list'] == self.sequence_list
             assert info['interval'] == self._interval
-            assert info['cam_list'] == self.cam_list
             self.db = info['db']
         else:
             self._get_db()
             info = {
                 'sequence_list': self.sequence_list,
                 'interval': self._interval,
-                'cam_list': self.cam_list,
                 'db': self.db
             }
             pickle.dump(info, open(self.db_file, 'wb'))
         self.db_size = len(self.db)
-
+    
     def _get_db(self):
         for seq in self.sequence_list:
-            cameras = self.cameras[seq]
-
-            curr_anno = osp.join(self.dataset_root, seq, 'hdPose3d_stage1_coco19')
+            curr_anno = osp.join(self.dataset_dir, seq, 'hdPose3d_stage1_coco19')
             anno_files = sorted(glob.iglob('{:s}/*.json'.format(curr_anno)))
 
+            # save all image paths and 3d gt joints
             for i, anno_file in enumerate(anno_files):
                 if i % self._interval == 0:
                     with open(anno_file, "r") as f:
@@ -118,79 +119,51 @@ class Panoptic(JointsDataset):
                     if len(bodies) == 0:
                         continue
 
+                    all_image_path = []
                     missing_image = False
-                    for k, v in cameras.items():
+                    for k in range(self.num_views):
                         suffix = osp.basename(anno_file).replace("body3DScene", "")
-                        prefix = "{:02d}_{:02d}".format(k[0], k[1])
-                        image_path = osp.join(seq, "hdImgs", prefix, prefix + suffix)
+                        prefix = "{:02d}_{:02d}".format(self.cam_list[k][0], self.cam_list[k][1])
+                        image_path = osp.join(self.dataset_dir, seq, "hdImgs", prefix, prefix + suffix)
                         image_path = image_path.replace("json", "jpg")
-                        if not osp.exists(osp.join(self.dataset_root, image_path)):
+                        if not osp.exists(image_path):
                             logger.info("Image not found: {}. Skipped.".format(image_path))
                             missing_image = True
                             break
-                        
-                        data_numpy = cv2.imread(osp.join(self.dataset_root, image_path), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
-                        assert data_numpy is not None, "image file not exist"
+                        all_image_path.append(image_path)
 
-                        # resize the image for preprocessing
-                        if data_numpy.shape[0] == self.ori_image_height:
-                            r = 0
-                            c = np.array([self.ori_image_width / 2.0, self.ori_image_height / 2.0])
-                            s = get_scale((self.ori_image_width, self.ori_image_height),
-                                        self.image_size)
-                            trans = get_affine_transform(c, s, r, self.image_size)
-                            
-                            input = cv2.warpAffine(
-                                data_numpy,
-                                trans, (int(self.image_size[0]), int(self.image_size[1])),
-                                flags=cv2.INTER_LINEAR)
-                            
-                            cv2.imwrite(osp.join(self.dataset_root, image_path), input)
-                            print("resize and overwrite the image:", image_path)
-
-                        our_cam = dict()
-                        our_cam['R'] = v['R']
-                        our_cam['T'] = -np.dot(v['R'].T, v['t']) * 10.0  # the order to handle rotation and translation is reversed
-                        our_cam['fx'] = np.array(v['K'][0, 0])
-                        our_cam['fy'] = np.array(v['K'][1, 1])
-                        our_cam['cx'] = np.array(v['K'][0, 2])
-                        our_cam['cy'] = np.array(v['K'][1, 2])
-                        our_cam['k'] = v['distCoef'][[0, 1, 4]].reshape(3, 1)
-                        our_cam['p'] = v['distCoef'][[2, 3]].reshape(2, 1)
-
-                        all_poses_3d = []
-                        all_poses_3d_vis = []
-
-                        for body in bodies:
-                            pose3d = np.array(body['joints19']).reshape((-1, 4))
-                            pose3d = pose3d[:self.num_joints]
-
-                            joints_vis = pose3d[:, -1]
-                            joints_vis = np.maximum(joints_vis, 0.0)
-
-                            if joints_vis[self.root_id] <= 0.1:
-                                continue
-
-                            # Coordinate transformation
-                            M = np.array([[1.0, 0.0, 0.0],
-                                          [0.0, 0.0, -1.0],
-                                          [0.0, 1.0, 0.0]])
-                            pose3d[:, 0:3] = pose3d[:, 0:3].dot(M)
-
-                            all_poses_3d.append(pose3d[:, 0:3] * 10.0)
-                            all_poses_3d_vis.append(joints_vis)
-
-                        if len(all_poses_3d) > 0:
-                            self.db.append({
-                                'seq': seq,
-                                'image': osp.join(self.dataset_root, image_path),
-                                'joints_3d': all_poses_3d,
-                                'joints_3d_vis': all_poses_3d_vis,
-                                'camera': our_cam
-                            })
-                    
                     if missing_image:
                         continue
+
+                    all_poses_3d = []
+                    all_poses_3d_vis = []
+                    for body in bodies:
+                        pose3d = np.array(body['joints19']).reshape((-1, 4))
+                        pose3d = pose3d[:self.num_joints]
+
+                        joints_vis = pose3d[:, -1]
+                        joints_vis = np.maximum(joints_vis, 0.0)
+                        # ignore the joints with visibility less than 0.1
+                        if joints_vis[self.root_id] <= 0.1:
+                            continue
+
+                        # coordinate transformation
+                        M = np.array([[1.0, 0.0, 0.0],
+                                      [0.0, 0.0, -1.0],
+                                      [0.0, 1.0, 0.0]])
+                        pose3d[:, 0:3] = pose3d[:, 0:3].dot(M)
+
+                        all_poses_3d.append(pose3d[:, 0:3] * 10.0)
+                        all_poses_3d_vis.append(joints_vis)
+
+                    if len(all_poses_3d) > 0:
+                        self.db.append({
+                            'seq': seq,
+                            'all_image_path': all_image_path,
+                            'joints_3d': all_poses_3d,
+                            'joints_3d_vis': all_poses_3d_vis,
+                        })
+            
         super()._rebuild_db()
         logger.info("=> {} images from {} views loaded".format(len(self.db), self.num_views))
         return
@@ -202,9 +175,9 @@ class Panoptic(JointsDataset):
                       [0.0, 1.0, 0.0]])
 
         for seq in self.sequence_list:
-            cameras[seq] = dict()
+            cameras[seq] = []
 
-            cam_file = osp.join(self.dataset_root, seq, "calibration_{:s}.json".format(seq))
+            cam_file = osp.join(self.dataset_dir, seq, "calibration_{:s}.json".format(seq))
             with open(cam_file, "r") as f:
                 calib = json.load(f)
 
@@ -215,31 +188,37 @@ class Panoptic(JointsDataset):
                     sel_cam['distCoef'] = np.array(cam['distCoef'])
                     sel_cam['R'] = np.array(cam['R']).dot(M)
                     sel_cam['t'] = np.array(cam['t']).reshape((3, 1))
-                    cameras[seq][(cam['panel'], cam['node'])] = sel_cam
+                    cameras[seq].append(sel_cam)
+            
+            # convert the format of camera parameters
+            for k, v in enumerate(cameras[seq]):
+                our_cam = dict()
+                our_cam['R'] = v['R']
+                our_cam['T'] = -np.dot(v['R'].T, v['t']) * 10.0  # the order to handle rotation and translation is reversed
+                our_cam['fx'] = v['K'][0, 0]
+                our_cam['fy'] = v['K'][1, 1]
+                our_cam['cx'] = v['K'][0, 2]
+                our_cam['cy'] = v['K'][1, 2]
+                our_cam['k'] = v['distCoef'][[0, 1, 4]].reshape(3, 1)
+                our_cam['p'] = v['distCoef'][[2, 3]].reshape(2, 1)
+                cameras[seq][k] = our_cam
         return cameras
 
     def __getitem__(self, idx):
-        input, target, meta, input_heatmap = [], [], [], []
-        for k in range(self.num_views):
-            i, t, m, ih = super().__getitem__(self.num_views * idx + k)
-            input.append(i)
-            target.append(t)
-            meta.append(m)
-            input_heatmap.append(ih)
+        input, target, meta, input_heatmap = super().__getitem__(idx)
         return input, target, meta, input_heatmap
 
     def __len__(self):
-        return self.db_size // self.num_views
+        return self.db_size
 
     def evaluate(self, preds):
         eval_list = []
-        gt_num = self.db_size // self.num_views
+        gt_num = self.db_size
         # assert len(preds) == gt_num, 'number mismatch'
 
         total_gt = 0
         for i in range(len(preds)):
-            index = self.num_views * i
-            db_rec = copy.deepcopy(self.db[index])
+            db_rec = copy.deepcopy(self.db[i])
             num_person = db_rec['meta']['num_person']
             joints_3d = db_rec['meta']['joints_3d'][:num_person]
             joints_3d_vis = db_rec['meta']['joints_3d_vis'][:num_person]
@@ -247,7 +226,7 @@ class Panoptic(JointsDataset):
             if num_person == 0:
                 continue
 
-            pred = preds[i].copy()
+            pred = preds[i].detach().cpu().numpy()
             pred = pred[pred[:, 0, 3] >= 0]
             for pose in pred:
                 mpjpes = []

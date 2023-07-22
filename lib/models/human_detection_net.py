@@ -16,13 +16,11 @@ class ProposalLayer(nn.Module):
         super(ProposalLayer, self).__init__()
         self.max_people = cfg.CAPTURE_SPEC.MAX_PEOPLE
         self.min_score = cfg.CAPTURE_SPEC.MIN_SCORE
-        '''
-        self.space_size = torch.tensor(cfg.CAPTURE_SPEC.SPACE_SIZE)
-        self.space_center = torch.tensor(cfg.CAPTURE_SPEC.SPACE_CENTER)
-        self.voxels_per_axis = torch.tensor(cfg.CAPTURE_SPEC.VOXELS_PER_AXIS)
-        self.scale = None
-        self.bias = None
-        '''
+        self.device = torch.device(cfg.DEVICE)
+
+        # constants for getting real coordinates
+        self.scale = (torch.tensor(cfg.CAPTURE_SPEC.SPACE_SIZE) / (torch.tensor(cfg.CAPTURE_SPEC.VOXELS_PER_AXIS) - 1)).to(self.device) 
+        self.bias = (torch.tensor(cfg.CAPTURE_SPEC.SPACE_CENTER) - torch.tensor(cfg.CAPTURE_SPEC.SPACE_SIZE) / 2.0).to(self.device)
 
     def filter_proposal(self, topk_index, bbox_preds, gt_3d, gt_bbox, num_person):
         batch_size = topk_index.shape[0]
@@ -43,37 +41,22 @@ class ProposalLayer(nn.Module):
                     bbox_preds[i, k] = gt_bbox[i, proposal2gt[i, k].long()]
         return proposal2gt
 
-    '''
-    def get_real_loc(self, index):
-        device = index.device
-        if self.voxels_per_axis.device != device:
-            self.voxels_per_axis = self.voxels_per_axis.to(device=device, dtype=torch.float)
-            self.space_size = self.space_size.to(device=device)
-            self.space_center = self.space_center.to(device=device)
-            self.min_score = torch.tensor(self.min_score, dtype=torch.float, device=device)
-        
-        if self.scale is None:
-            self.scale = 1 / (self.voxels_per_axis - 1) * self.space_size
-            self.bias = self.space_center - self.space_size / 2.0
-        
-        loc = index.float() * self.scale + self.bias
-        return loc
-    '''
-            
     def forward(self, topk_index, topk_confs, match_bbox_preds, meta):
         device = topk_index.device
         batch_size = topk_index.shape[0]
-        # topk_index = self.get_real_loc(topk_index)
+
+        # convert into real coordinates for filtering
+        topk_index = topk_index.float() * self.scale + self.bias
 
         proposal_centers = torch.zeros(batch_size, self.max_people, 7, device=device)
         proposal_centers[:, :, 0:3] = topk_index
         proposal_centers[:, :, 4] = topk_confs
 
         # match to gt for training
-        if self.training and ('roots_3d' in meta[0] and 'num_person' in meta[0]):
-            gt_3d = meta[0]['roots_3d'].float()
-            gt_bbox = meta[0]['bbox'].float()
-            num_person = meta[0]['num_person']
+        if self.training and ('roots_3d' in meta and 'num_person' in meta):
+            gt_3d = meta['roots_3d'].float().to(self.device)
+            gt_bbox = meta['bbox'].float().to(self.device)
+            num_person = meta['num_person']
             proposal2gt = self.filter_proposal(topk_index, match_bbox_preds, gt_3d, gt_bbox, num_person)
             proposal_centers[:, :, 3] = proposal2gt
         else:
@@ -84,25 +67,19 @@ class ProposalLayer(nn.Module):
 class HumanDetectionNet(nn.Module):
     def __init__(self, cfg):
         super(HumanDetectionNet, self).__init__()
-        '''
-        self.space_size = cfg.CAPTURE_SPEC.SPACE_SIZE
-        self.space_center = cfg.CAPTURE_SPEC.SPACE_CENTER
-        self.voxels_per_axis = cfg.CAPTURE_SPEC.VOXELS_PER_AXIS
-        '''
         self.max_people = cfg.CAPTURE_SPEC.MAX_PEOPLE
-
         self.project_layer = ProjectLayer(cfg)
         self.center_net = CenterNet(cfg.DATASET.NUM_JOINTS, 1)
         self.c2c_net = C2CNet(cfg.DATASET.NUM_JOINTS, 1)
         self.proposal_layer = ProposalLayer(cfg)
         
-    def forward(self, heatmaps, meta):
-        batch_size = heatmaps[0].shape[0]
-        num_joints = heatmaps[0].shape[1]
-
+    def forward(self, heatmaps, meta, cameras, resize_transform):
+        batch_size = heatmaps.shape[0]
+        num_joints = heatmaps.shape[2]
+        
         # construct feature cubes
-        feature_cubes = self.project_layer(heatmaps, meta)                                           
-
+        feature_cubes = self.project_layer(heatmaps, meta, cameras, resize_transform)                                         
+        
         # generate 2d proposals
         proposal_heatmaps_2d, bbox_preds = self.center_net(feature_cubes)
         topk_2d_confs, topk_2d_index, topk_2d_flatten_index = nms2D(proposal_heatmaps_2d.detach(), self.max_people) 
@@ -119,6 +96,7 @@ class HumanDetectionNet(nn.Module):
 
         # assemble predictions
         topk_index = torch.cat([topk_2d_index, topk_1d_index], dim=2)
+        
         # confidence score: product of 2d value and 1d value
         topk_confs = topk_2d_confs * topk_1d_confs.squeeze(2)
         proposal_centers = self.proposal_layer(topk_index, topk_confs, match_bbox_preds, meta)

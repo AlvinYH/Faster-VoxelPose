@@ -7,12 +7,12 @@ import logging
 import os
 import torch
 
-from utils.vis import save_debug_2d_images, save_multi_image_with_projected_poses, save_multi_batch_heatmaps
+from utils.vis import train_vis_all, test_vis_all
 
 logger = logging.getLogger(__name__)
 
 
-def train_3d(config, model, optimizer, loader, epoch, output_dir, writer_dict, device=torch.device('cuda'), dtype=torch.float):
+def train(config, backbone, model, optimizer, loader, epoch, output_dir, writer_dict):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -22,21 +22,36 @@ def train_3d(config, model, optimizer, loader, epoch, output_dir, writer_dict, d
     losses_joint = AverageMeter()
 
     model.train()
-
-    if model.module.backbone is not None:
-        model.module.backbone.eval()  # Comment out this line if you want to train 2D backbone jointly
+    if backbone is not None:
+        backbone.train()
 
     accumulation_steps = 4
     accu_loss = 0
 
     end = time.time()
-    for i, (inputs, targets, meta, input_heatmap) in enumerate(loader):
-        data_time.update(time.time() - end)
-        if config.DATASET.TRAIN_HEATMAP_SRC == 'image':
-            final_poses, poses, proposal_centers, loss_dict, input_heatmap = model(views=inputs, meta=meta, targets=targets[0])
-        else:
-            final_poses, poses, proposal_centers, loss_dict, _ = model(meta=meta, targets=targets[0], input_heatmaps=input_heatmap)
 
+    # loading constants of the dataset
+    cameras = loader.dataset.cameras
+    resize_transform = torch.as_tensor(loader.dataset.resize_transform, dtype=torch.float, device=config.DEVICE)
+
+    for i, (inputs, targets, meta, input_heatmaps) in enumerate(loader):
+        if i > 5:
+            break
+        if config.DATASET.TEST_HEATMAP_SRC == 'image':
+            inputs = inputs.to(config.DEVICE)
+            targets = dict((k, v.to(config.DEVICE)) for k, v in targets.items())
+            fused_poses, plane_poses, proposal_centers, input_heatmaps, loss_dict = model(backbone=backbone, views=inputs, 
+                                                                                          meta=meta, targets=targets,
+                                                                                          cameras=cameras, 
+                                                                                          resize_transform=resize_transform)
+        else:
+            input_heatmaps = input_heatmaps.to(config.DEVICE)
+            targets = dict((k, v.to(config.DEVICE)) for k, v in targets.items())
+            fused_poses, plane_poses, proposal_centers, _, loss_dict  = model(backbone=backbone, meta=meta, 
+                                                                              input_heatmaps=input_heatmaps, 
+                                                                              targets=targets, cameras=cameras, 
+                                                                              resize_transform=resize_transform)
+                
         loss = loss_dict["total"]
         loss_2d = loss_dict["2d_heatmaps"]
         loss_1d = loss_dict["1d_heatmaps"]
@@ -50,24 +65,25 @@ def train_3d(config, model, optimizer, loader, epoch, output_dir, writer_dict, d
         losses_joint.update(loss_joint.item())
         
         if loss_joint > 0:
-            optimizer.zero_grad()
+            optimizer['joint'].zero_grad()
             loss_joint.backward()
-            optimizer.step()
+            optimizer['joint'].step()
 
         if accu_loss > 0 and (i + 1) % accumulation_steps == 0:
-            optimizer.zero_grad()
+            optimizer['pose'].zero_grad()
             accu_loss.backward()
-            optimizer.step()
+            optimizer['pose'].step()
             accu_loss = 0.0
         else:
             accu_loss += (loss_2d + loss_1d + loss_bbox) / accumulation_steps
-        
 
+        del loss_joint, loss_2d, loss_1d, loss_bbox
+        
         batch_time.update(time.time() - end)
         end = time.time()
 
         if i % config.PRINT_FREQ == 0:
-            gpu_memory_usage = torch.cuda.memory_allocated(0)
+            gpu_memory_usage = torch.cuda.memory_allocated(config.DEVICE)
             msg = 'Epoch: [{0}][{1}/{2}]\t' \
                   'Time: {batch_time.val:.3f}s ({batch_time.avg:.3f}s)\t' \
                   'Speed: {speed:.1f} samples/s\t' \
@@ -94,30 +110,42 @@ def train_3d(config, model, optimizer, loader, epoch, output_dir, writer_dict, d
             writer.add_scalar('train_loss', losses.val, global_steps)
             writer_dict['train_global_steps'] = global_steps + 1
             
-            prefix = '{}_{:08}'.format(os.path.join(output_dir, 'train'), i)
-            save_debug_2d_images(config, meta[0], final_poses, poses, proposal_centers, prefix)
-            # save_multi_image_with_projected_poses(config, inputs, final_poses, meta, prefix)
-            # save_multi_batch_heatmaps(config, inputs, input_heatmap, prefix)
+            # visualization
+            if config.TRAIN.VISUALIZATION:
+                prefix = '{}_{:08}'.format(os.path.join(output_dir, 'train'), i)
+                train_vis_all(config, meta, cameras, resize_transform, inputs, input_heatmaps, fused_poses, plane_poses, proposal_centers, prefix)
 
 
-def validate_3d(config, model, loader, output_dir, has_evaluate_function=False):
+def validate(config, backbone, model, loader, output_dir, has_evaluate_function=False):
     batch_time = AverageMeter()
     data_time = AverageMeter()
+    
     model.eval()
+    if backbone is not None:
+        backbone.eval()
 
-    all_final_poses = []
+    # loading constants of the dataset
+    cameras = loader.dataset.cameras
+    resize_transform = torch.as_tensor(loader.dataset.resize_transform, dtype=torch.float, device=config.DEVICE)
+
     with torch.no_grad():
+        all_fused_poses = []
         end = time.time()
-        for i, (inputs, targets, meta, input_heatmap) in enumerate(loader):
+        for i, (inputs, _, meta, input_heatmaps) in enumerate(loader):
             data_time.update(time.time() - end)
-            if config.DATASET.TRAIN_HEATMAP_SRC == 'image':
-                final_poses, poses, proposal_centers, _, input_heatmap = model(views=inputs, meta=meta, targets=targets[0])
+            if config.DATASET.TEST_HEATMAP_SRC == 'image':
+                inputs = inputs.to(config.DEVICE)
+                fused_poses, plane_poses, proposal_centers, input_heatmaps, _ = model(backbone=backbone, views=inputs, 
+                                                                                      meta=meta, cameras=cameras, 
+                                                                                      resize_transform=resize_transform)
             else:
-                final_poses, poses, proposal_centers, _, _ = model(meta=meta, targets=targets[0], input_heatmaps=input_heatmap)
-           
-            final_poses = final_poses.detach().cpu().numpy()
-            for b in range(final_poses.shape[0]):
-                all_final_poses.append(final_poses[b])
+                input_heatmaps = input_heatmaps.to(config.DEVICE)
+                fused_poses, plane_poses, proposal_centers, _, _  = model(backbone=backbone, meta=meta, 
+                                                                          input_heatmaps=input_heatmaps, 
+                                                                          cameras=cameras, 
+                                                                          resize_transform=resize_transform)
+            
+            all_fused_poses.append(fused_poses)
 
             batch_time.update(time.time() - end)
             end = time.time()
@@ -133,15 +161,19 @@ def validate_3d(config, model, loader, output_dir, has_evaluate_function=False):
                         data_time=data_time, memory=gpu_memory_usage)
                 logger.info(msg)
 
-                prefix = '{}_{:08}'.format(os.path.join(output_dir, 'validation'), i)
-                save_debug_2d_images(config, meta[0], final_poses, poses, proposal_centers, prefix)
-                # save_multi_image_with_projected_poses(config, inputs, final_poses, meta, prefix)
-                # save_multi_batch_heatmaps(config, inputs, input_heatmap, prefix)
+                all_fused_poses.append(fused_poses)
+
+                # visualization
+                if config.TEST.VISUALIZATION:
+                    prefix = '{}_{:08}'.format(os.path.join(output_dir, 'validation'), i)
+                    test_vis_all(config, meta, cameras, resize_transform, inputs, input_heatmaps, fused_poses, plane_poses, proposal_centers, prefix)
+        
+        all_fused_poses = torch.cat(all_fused_poses, dim=0)
     
     if not has_evaluate_function:
         return 0.0
 
-    metric, msg = loader.dataset.evaluate(all_final_poses)
+    metric, msg = loader.dataset.evaluate(all_fused_poses)
     logger.info(msg)
     return metric
 

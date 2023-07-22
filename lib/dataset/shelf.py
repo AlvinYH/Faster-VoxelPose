@@ -19,11 +19,10 @@ import cv2
 from collections import OrderedDict
 
 from dataset.JointsDataset import JointsDataset
-from utils.transforms import get_scale, get_affine_transform
 
 logger = logging.getLogger(__name__)
 
-SHELF_JOINTS_DEF = {
+shelf_joints_def = {
     'Right-Ankle': 0,
     'Right-Knee': 1,
     'Right-Hip': 2,
@@ -40,124 +39,130 @@ SHELF_JOINTS_DEF = {
     'Top-Head': 13
 }
 
-LIMBS = [
-    [0, 1],
-    [1, 2],
-    [3, 4],
-    [4, 5],
-    [2, 3],
-    [6, 7],
-    [7, 8],
-    [9, 10],
-    [10, 11],
-    [2, 8],
-    [3, 9],
-    [8, 12],
-    [9, 12],
-    [12, 13]
+shelf_bones_def = [
+    [13, 12],  # head
+    [12, 9], [9, 10], [10, 11],  # left arm
+    [12, 8], [8, 7], [7, 6],  # right arm
+    [9, 3], [8, 2],  # trunk
+    [3, 4], [4, 5],  # left leg
+    [2, 1], [1, 0],  # right leg
+]
+
+coco_joints_def = {
+    0: 'nose',
+    1: 'Leye', 2: 'Reye',
+    3: 'Lear', 4: 'Rear',
+    5: 'Lsho', 6: 'Rsho',
+    7: 'Lelb', 8: 'Relb',
+    9: 'Lwri', 10: 'Rwri',
+    11: 'Lhip', 12: 'Rhip',
+    13: 'Lkne', 14: 'Rkne',
+    15: 'Lank', 16: 'Rank',
+}
+
+coco_bones_def = [
+    [0, 1], [0, 2], [1, 3], [2, 4],  # head
+    [3, 5], [5, 7], [7, 9],  # left arm
+    [4, 6], [6, 8], [8, 10],  # right arm
+    [5, 11], [6, 12],  # trunk
+    [11, 13], [13, 15],  # left leg
+    [12, 14], [14, 16],  # right leg
 ]
 
 
 class Shelf(JointsDataset):
-    def __init__(self, cfg, is_train=True, add_noise_to_heatmap=False, transform=None):
-        super().__init__(cfg, is_train, False, transform)
+    def __init__(self, cfg, is_train=True, transform=None):
+        super().__init__(cfg, is_train, transform)
+
+        self.num_joints = len(shelf_joints_def)
+        self.num_views = cfg.DATASET.CAMERA_NUM
 
         self.has_evaluate_function = True
         self.frame_range = list(range(300, 601)) 
         self.pred_pose2d = self._get_pred_pose2d()
-        self.num_joints = len(SHELF_JOINTS_DEF)
-        self.cameras = self._get_db()
-        self.db_size = len(self.db)
+        self.cameras = self._get_cam()
+        self._get_db()
 
     def _get_pred_pose2d(self):
-        file = os.path.join(self.dataset_root, "pred_shelf_maskrcnn_hrnet_coco.pkl")
+        file = os.path.join(self.dataset_dir, "pred_shelf_maskrcnn_hrnet_coco.pkl")
         with open(file, "rb") as pfile:
             logging.info("=> load {}".format(file))
             pred_2d = pickle.load(pfile)
-
         return pred_2d
 
     def _get_db(self):
-        cameras = self._get_cam()
-
-        datafile = os.path.join(self.dataset_root, 'actorsGT.mat')
-        data = scio.loadmat(datafile)
-        actor_3d = np.array(np.array(data['actor3D'].tolist()).tolist()).squeeze()  # num_person * num_frame
+        datafile = os.path.join(self.dataset_dir, 'actorsGT.mat')
+        actor_3d = scio.loadmat(datafile)['actor3D']
+        actor_3d = np.array(np.array(actor_3d.tolist()).tolist(), dtype=object).squeeze()
         num_person = len(actor_3d)
 
         for i in self.frame_range:
-            for k, cam in cameras.items():
-                image_path = osp.join("Camera" + k, "img_{:06d}.png".format(i))
-                data_numpy = cv2.imread(osp.join(self.dataset_root, image_path), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
-                assert data_numpy is not None, "image file not exist"
-                        
-                if data_numpy.shape[0] == self.ori_image_height:
-                    r = 0
-                    c = np.array([self.ori_image_width / 2.0, self.ori_image_height / 2.0])
-                    s = get_scale((self.ori_image_width, self.ori_image_height),
-                                   self.image_size)
-                    trans = get_affine_transform(c, s, r, self.image_size)
-                    input = cv2.warpAffine(
-                            data_numpy,
-                            trans, (int(self.image_size[0]), int(self.image_size[1])),
-                            flags=cv2.INTER_LINEAR)
-                            
-                    cv2.imwrite(osp.join(self.dataset_root, image_path), input)
-                    print("resize and overwrite the image:", image_path)
+            all_image_path, all_preds, all_poses_3d, all_poses_3d_vis = [], [], [], []
 
-                all_poses_3d = []
-                all_poses_3d_vis = []
-                for person in range(num_person):
-                    pose3d = actor_3d[person][i] * 1000.0
-                    if len(pose3d[0]) > 0:
-                        all_poses_3d.append(pose3d)
-                        all_poses_3d_vis.append(np.ones(self.num_joints))
+            for person in range(num_person):
+                pose3d = actor_3d[person][i] * 1000.0
+                if len(pose3d[0]) > 0:
+                    all_poses_3d.append(pose3d)
+                    all_poses_3d_vis.append(np.ones(self.num_joints))
                 
+            missing_image = False
+            for k in range(self.num_views):
+                image_path = osp.join(self.dataset_dir, "Camera{}".format(k), "img_{:06d}.png".format(i))
+                if not osp.exists(image_path):
+                    logger.info("Image not found: {}. Skipped.".format(image_path))
+                    missing_image = True
+                    break
+                all_image_path.append(image_path)
+
+                # save all 2D pred results
                 pred_index = '{}_{}'.format(k, i)
                 preds = self.pred_pose2d[pred_index]
                 preds = [np.array(p["pred"]) for p in preds]
+                all_preds.append(preds)
+            
+            if missing_image:
+                continue
 
-                self.db.append({
-                    'seq': 'shelf',
-                    'image': osp.join(self.dataset_root, image_path),
-                    'camera': cam,
-                    'pred_pose2d': preds,
-                    'joints_3d': all_poses_3d,
-                    'joints_3d_vis': all_poses_3d_vis
-                })
+            self.db.append({
+                'seq': 'shelf',
+                'all_image_path': all_image_path,
+                'pred_pose2d': all_preds,
+                'joints_3d': all_poses_3d,
+                'joints_3d_vis': all_poses_3d_vis
+            })
 
         super()._rebuild_db()
         logger.info("=> {} images from {} views loaded".format(len(self.db), self.num_views))
-        return cameras
+        return
 
     def _get_cam(self):
-        cam_file = osp.join(self.dataset_root, "calibration_shelf.json")
+        cam_file = osp.join(self.dataset_dir, "calibration_shelf.json")
         with open(cam_file) as cfile:
             cameras = json.load(cfile)
 
         for id, cam in cameras.items():
             for k, v in cam.items():
                 cameras[id][k] = np.array(v)
+        
+        cameras_int_key = {}
+        for id, cam in cameras.items():
+            cameras_int_key[int(id)] = cam
 
-        return cameras
+        our_cameras = dict()
+        our_cameras['shelf'] = cameras_int_key
+        return our_cameras
 
     def __getitem__(self, idx):
-        input, target, meta, input_heatmap = [], [], [], []
-        for k in range(self.num_views):
-            i, t, m, ih = super().__getitem__(self.num_views * idx + k)
-            input.append(i)
-            target.append(t)
-            meta.append(m)
-            input_heatmap.append(ih)
+        input, target, meta, input_heatmap = super().__getitem__(idx)
         return input, target, meta, input_heatmap
 
     def __len__(self):
-        return self.db_size // self.num_views
+        return len(self.db)
 
     def evaluate(self, preds, recall_threshold=500):
-        datafile = os.path.join(self.dataset_root, 'actorsGT.mat')
-        data = scio.loadmat(datafile)
-        actor_3d = np.array(np.array(data['actor3D'].tolist()).tolist()).squeeze()  # num_person * num_frame
+        datafile = os.path.join(self.dataset_dir, 'actorsGT.mat')
+        actor_3d = scio.loadmat(datafile)['actor3D']
+        actor_3d = np.array(np.array(actor_3d.tolist()).tolist(), dtype=object).squeeze()
         num_person = len(actor_3d)
         total_gt = 0
         match_gt = 0
@@ -169,7 +174,7 @@ class Shelf(JointsDataset):
         bone_correct_parts = np.zeros((num_person, 10))
 
         for i, fi in enumerate(self.frame_range):
-            pred_coco = preds[i].copy()
+            pred_coco = preds[i].detach().cpu().numpy()
             pred_coco = pred_coco[pred_coco[:, 0, 3] >= 0, :, :3]
             pred = np.stack([self.coco2shelf3D(p) for p in copy.deepcopy(pred_coco[:, :, :3])])
 

@@ -10,50 +10,44 @@ from __future__ import print_function
 import os
 import logging
 import time
-from pathlib import Path
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from core.config import get_model_name
-
 
 def create_logger(cfg, cfg_name, phase='train'):
-    this_dir = Path(os.path.dirname(__file__))
-    root_output_dir = (this_dir / '..' / '..' / cfg.OUTPUT_DIR).resolve()
-    tensorboard_log_dir = (this_dir / '..' / '..' / cfg.LOG_DIR).resolve()
-    # set up logger
-    if not root_output_dir.exists():
-        print('=> creating {}'.format(root_output_dir))
-        root_output_dir.mkdir()
+    tensorboard_log_dir = cfg.LOG_DIR
+    
+    # create the root output directory if not exists
+    if not os.path.exists(cfg.OUTPUT_DIR):
+        os.mkdir(cfg.OUTPUT_DIR)
+        print('=> creating the output directory: {}'.format(cfg.OUTPUT_DIR))
 
+    # create the output directory for this config file
     dataset = cfg.DATASET.TEST_DATASET
-    model, _ = get_model_name(cfg)
     cfg_name = os.path.basename(cfg_name).split('.')[0]
+    final_output_dir = os.path.join(cfg.OUTPUT_DIR, dataset, cfg_name)
+    os.makedirs(final_output_dir, exist_ok=True)
+    print('=> the output will be saved in: {}'.format(final_output_dir))
 
-    final_output_dir = root_output_dir / dataset / model / cfg_name
-
-    print('=> creating {}'.format(final_output_dir))
-    final_output_dir.mkdir(parents=True, exist_ok=True)
-
+    # set up log file
     time_str = time.strftime('%Y-%m-%d-%H-%M')
-    log_file = '{}_{}_{}.log'.format(cfg_name, time_str, phase)
-    final_log_file = final_output_dir / log_file
+    log_file = '{}_{}.log'.format(phase, time_str)
+    final_log_file = os.path.join(final_output_dir, log_file)
     head = '%(asctime)-15s %(message)s'
-    logging.basicConfig(filename=str(final_log_file),
-                        format=head)
+    logging.basicConfig(filename=str(final_log_file), format=head)
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     console = logging.StreamHandler()
     logging.getLogger('').addHandler(console)
 
-    tensorboard_log_dir = tensorboard_log_dir / dataset / model / \
-        (cfg_name + time_str)
-    print('=> creating {}'.format(tensorboard_log_dir))
-    tensorboard_log_dir.mkdir(parents=True, exist_ok=True)
-
-    return logger, str(final_output_dir), str(tensorboard_log_dir)
+    # create the log directory for tensorboard visualization (only for training)
+    if phase == 'train':
+        tensorboard_log_dir = os.path.join(cfg.LOG_DIR, dataset, (cfg_name + "_" + time_str))
+        os.makedirs(tensorboard_log_dir, exist_ok=True)
+        print('=> creating the training log directory: {}'.format(tensorboard_log_dir))
+    return logger, final_output_dir, tensorboard_log_dir
 
 
 def get_optimizer(cfg, model):
@@ -71,21 +65,10 @@ def get_optimizer(cfg, model):
             model.parameters(),
             lr=cfg.TRAIN.LR
         )
+    else:
+        raise ValueError("optimizer type not supported")
 
     return optimizer
-
-
-def load_model_state(model, output_dir, epoch):
-    file = os.path.join(output_dir, 'checkpoint_3d_epoch' +
-                        str(epoch)+'.pth.tar')
-    if os.path.isfile(file):
-        model.module.load_state_dict(torch.load(file))
-        print('=> load models state {} (epoch {})'
-              .format(file, epoch))
-        return model
-    else:
-        print('=> no checkpoint found at {}'.format(file))
-        return model
 
 
 def load_checkpoint(model, optimizer, output_dir, filename='checkpoint.pth.tar'):
@@ -94,61 +77,22 @@ def load_checkpoint(model, optimizer, output_dir, filename='checkpoint.pth.tar')
         checkpoint = torch.load(file)
         start_epoch = checkpoint['epoch']
         precision = checkpoint['precision'] if 'precision' in checkpoint else 0
-        model.module.load_state_dict(checkpoint['state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer'])
-        print('=> load checkpoint {} (epoch {})'
-              .format(file, start_epoch))
-
+        model.load_state_dict(checkpoint['state_dict'])
+        optimizer['pose'].load_state_dict(checkpoint['pose_optimizer'])
+        optimizer['joint'].load_state_dict(checkpoint['joint_optimizer'])
+        print('=> load checkpoint {} (epoch {})'.format(file, start_epoch))
         return start_epoch, model, optimizer, precision
-
     else:
-        print('=> no checkpoint found at {}'.format(file))
-        return 0, model, optimizer, 0
+        raise ValueError("no checkpoint found in the directory")
 
 
-def save_checkpoint(states, is_best, output_dir,
-                    filename='checkpoint.pth.tar'):
+def save_checkpoint(states, is_best, output_dir, filename='checkpoint.pth.tar'):
     torch.save(states, os.path.join(output_dir, filename))
     if is_best and 'state_dict' in states:
-        torch.save(states['state_dict'],
-                   os.path.join(output_dir, 'model_best.pth.tar'))
-
-
-def load_backbone(model, pretrained_file):
-    print('loading backbone')
-    if model.module.backbone is None:
-        print('not loaded')
-        return model
-
-    this_dir = os.path.dirname(__file__)
-    pretrained_file = os.path.abspath(
-        os.path.join(this_dir, '../..', pretrained_file))
-    pretrained_state_dict = torch.load(pretrained_file)
-    model_state_dict = model.module.backbone.state_dict()
-
-    prefix = "module."
-    new_pretrained_state_dict = {}
-    for k, v in pretrained_state_dict.items():
-        if k.replace(prefix, "") in model_state_dict and v.shape == model_state_dict[k.replace(prefix, "")].shape:
-            new_pretrained_state_dict[k.replace(prefix, "")] = v
-        elif k.replace(prefix, "") == "final_layer.weight":  # TODO
-            print("Reiniting final layer filters:", k)
-
-            o = torch.zeros_like(model_state_dict[k.replace(prefix, "")][:, :, :, :])
-            nn.init.xavier_uniform_(o)
-            n_filters = min(o.shape[0], v.shape[0])
-            o[:n_filters, :, :, :] = v[:n_filters, :, :, :]
-
-            new_pretrained_state_dict[k.replace(prefix, "")] = o
-        elif k.replace(prefix, "") == "final_layer.bias":
-            print("Reiniting final layer biases:", k)
-            o = torch.zeros_like(model_state_dict[k.replace(prefix, "")][:])
-            nn.init.zeros_(o)
-            n_filters = min(o.shape[0], v.shape[0])
-            o[:n_filters] = v[:n_filters]
-
-            new_pretrained_state_dict[k.replace(prefix, "")] = o
-    logging.info("load backbone statedict from {}".format(pretrained_file))
-    model.module.backbone.load_state_dict(new_pretrained_state_dict)
-
-    return model
+        
+        # not save the parameters of the backbone
+        new_states_dict = {}
+        for k, v in states['state_dict'].items(): 
+            if "backbone" not in k:
+                new_states_dict[k] = v
+        torch.save(new_states_dict, os.path.join(output_dir, 'model_best.pth.tar'))

@@ -59,6 +59,8 @@ python run/train.py --cfg configs/shelf/jln64.yaml
 python run/train.py --cfg configs/campus/jln64.yaml
 ```
 
+only support single-GPU training now.
+
 ## Evaluation
 ### CMU Panoptic dataset
 

@@ -50,18 +50,19 @@ class WeightNet(nn.Module):
         super(WeightNet, self).__init__()
         self.voxels_per_axis = cfg.INDIVIDUAL_SPEC.VOXELS_PER_AXIS
         self.num_joints = cfg.DATASET.NUM_JOINTS
-        self.channel_num_per_joint = 64
+        self.num_channel_joint_feat = cfg.NETWORK.NUM_CHANNEL_JOINT_FEAT
+        self.num_channel_joint_hidden = cfg.NETWORK.NUM_CHANNEL_JOINT_HIDDEN
         self.heatmap_feature_net = nn.Sequential(
-            nn.Conv2d(1, 64, 3, stride=1, padding=1),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(1, self.num_channel_joint_feat, 3, stride=1, padding=1),
+            nn.BatchNorm2d(self.num_channel_joint_feat),
             nn.MaxPool2d(2),
             nn.ReLU(inplace=True)
         )
 
         self.output = nn.Sequential(
-            nn.Linear(self.channel_num_per_joint, 64),
+            nn.Linear(self.num_channel_joint_feat, self.num_channel_joint_hidden),
             nn.ReLU(inplace=True),
-            nn.Linear(64, 1),
+            nn.Linear(self.num_channel_joint_hidden, 1),
             nn.Sigmoid()
         )
 
