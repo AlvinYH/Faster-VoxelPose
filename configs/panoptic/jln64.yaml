@@ -32,8 +32,7 @@ DATASET:
   ROOT_JOINT_ID: 2
 
 NETWORK:
-  # PRETRAINED_BACKBONE: "backbone/pose_resnet50_panoptic.pth.tar"
-  PRETRAINED_BACKBONE: 'check.pth.tar'
+  PRETRAINED_BACKBONE: "backbone/pose_resnet50_panoptic.pth.tar"
   NUM_CHANNEL_JOINT_FEAT: 32
   NUM_CHANNEL_JOINT_HIDDEN: 64
   SIGMA: 3

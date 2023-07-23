@@ -84,9 +84,12 @@ def preprocess_panoptic(image_size, trans):
                 image_path = image_path.replace("json", "jpg")
 
                 image = cv2.imread(image_path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
-                resized_image = cv2.warpAffine(image, trans, (int(image_size[0]), int(image_size[1])),
-                                            flags=cv2.INTER_LINEAR)
-                cv2.imwrite(image_path, resized_image)
+
+                # resize the image
+                if image.shape[0] != image_size[1] or image.shape[1] != image_size[0]:
+                    resized_image = cv2.warpAffine(image, trans, (int(image_size[0]), int(image_size[1])),
+                                                flags=cv2.INTER_LINEAR)
+                    cv2.imwrite(image_path, resized_image)
 
 
 def preprocess_shelf(image_size, trans):
@@ -99,9 +102,12 @@ def preprocess_shelf(image_size, trans):
         for k in range(num_views):
             image_path = os.path.join(data_dir, "Camera{}".format(k), "img_{:06d}.png".format(i))
             image = cv2.imread(image_path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
-            resized_image = cv2.warpAffine(image, trans, (int(image_size[0]), int(image_size[1])),
-                                        flags=cv2.INTER_LINEAR)
-            cv2.imwrite(image_path, resized_image)
+
+            # resize the image
+            if image.shape[0] != image_size[1] or image.shape[1] != image_size[0]:
+                resized_image = cv2.warpAffine(image, trans, (int(image_size[0]), int(image_size[1])),
+                                            flags=cv2.INTER_LINEAR)
+                cv2.imwrite(image_path, resized_image)
 
 
 def preprocess_campus(image_size, trans):
@@ -112,11 +118,14 @@ def preprocess_campus(image_size, trans):
     print("=> Start preprocessing the Campus dataset")
     for i in tqdm(frame_range):
         for k in range(num_views):
-            image_path = os.path.join("Camera{}".format(k), "campus4-c{}-{:05d}.png".format(k, i))
+            image_path = os.path.join(data_dir, "Camera{}".format(k), "campus4-c{}-{:05d}.png".format(k, i))
             image = cv2.imread(image_path, cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
-            resized_image = cv2.warpAffine(image, trans, (int(image_size[0]), int(image_size[1])),
-                                        flags=cv2.INTER_LINEAR)
-            cv2.imwrite(image_path, resized_image)
+            
+            # resize the image
+            if image.shape[0] != image_size[1] or image.shape[1] != image_size[0]:
+                resized_image = cv2.warpAffine(image, trans, (int(image_size[0]), int(image_size[1])),
+                                            flags=cv2.INTER_LINEAR)
+                cv2.imwrite(image_path, resized_image)
 
 
 if __name__ == '__main__':

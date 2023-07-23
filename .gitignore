@@ -143,7 +143,14 @@ cython_debug/
 
 # Custom
 **.out
-data
+data/Panoptic/*
+data/Shelf/*
+data/Campus/*
+data/panoptic_training_pose.pkl
 backbone
-models
 output
+
+!data/Campus/calibration_campus.json
+!data/Campus/pred_campus_maskrcnn_hrnet_coco.pkl
+!data/Shelf/calibration_shelf.json
+!data/Shelf/pred_shelf_maskrcnn_hrnet_coco.pkl

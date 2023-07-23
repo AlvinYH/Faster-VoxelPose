@@ -1,0 +1,86 @@
+CUDNN:
+  BENCHMARK: true
+  DETERMINISTIC: false
+  ENABLED: true
+
+BACKBONE: 'resnet'
+MODEL: 'faster_voxelpose'
+DEVICE: 'cuda:0'
+OUTPUT_DIR: 'output'
+LOG_DIR: 'log'
+WORKERS: 8
+PRINT_FREQ: 100
+
+DATASET:
+  DATADIR: "data/Panoptic"
+  COLOR_RGB: True
+  TRAIN_DATASET: 'panoptic'
+  TRAIN_HEATMAP_SRC: 'image'
+  TEST_DATASET: 'panoptic'
+  TEST_HEATMAP_SRC: 'image'
+  CAMERA_NUM: 5
+  ORI_IMAGE_SIZE: 
+    - 1920
+    - 1080
+  IMAGE_SIZE: 
+    - 960
+    - 512
+  HEATMAP_SIZE: 
+    - 240
+    - 128
+  NUM_JOINTS: 15
+  ROOT_JOINT_ID: 2
+
+NETWORK:
+  PRETRAINED_BACKBONE: "backbone/pose_resnet50_panoptic.pth.tar"
+  NUM_CHANNEL_JOINT_FEAT: 32
+  NUM_CHANNEL_JOINT_HIDDEN: 64
+  SIGMA: 3
+  BETA: 100
+
+TRAIN:
+  BATCH_SIZE: 8
+  SHUFFLE: true
+  BEGIN_EPOCH: 0
+  END_EPOCH: 20
+  RESUME: false
+  OPTIMIZER: adam
+  LR: 0.0001
+  LAMBDA_LOSS_2D: 1.0
+  LAMBDA_LOSS_1D: 1.0
+  LAMBDA_LOSS_BBOX: 0.1
+  LAMBDA_LOSS_FUSED: 5.0
+  VISUALIZATION: false
+  VIS_TYPE: ['2d_planes', 'image_with_poses', 'heatmaps']
+
+TEST:
+  MODEL_FILE: 'model_best.pth.tar'
+  BATCH_SIZE: 1
+  VISUALIZATION: true
+  VIS_TYPE: ['2d_planes', 'image_with_poses', 'heatmaps']
+
+CAPTURE_SPEC:
+  SPACE_SIZE:
+    - 8000.0
+    - 8000.0
+    - 2000.0
+  SPACE_CENTER:
+    - 0.0
+    - -500.0
+    - 800.0
+  VOXELS_PER_AXIS:
+    - 80
+    - 80
+    - 20
+  MAX_PEOPLE: 10
+  MIN_SCORE: 0.3
+  
+INDIVIDUAL_SPEC:
+  SPACE_SIZE:
+    - 2000.0
+    - 2000.0
+    - 2000.0
+  VOXELS_PER_AXIS:
+    - 64
+    - 64
+    - 64
