@@ -214,7 +214,7 @@ class Panoptic(JointsDataset):
     def evaluate(self, preds):
         eval_list = []
         gt_num = self.db_size
-        # assert len(preds) == gt_num, 'number mismatch'
+        assert len(preds) == gt_num, 'number mismatch'
 
         total_gt = 0
         for i in range(len(preds)):

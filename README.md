@@ -47,11 +47,13 @@ bash scripts/download_campus.sh
 
 2. Due to incomplete annotations of the Shelf/Campus datasets, we synthesize **extra data** to provide training supervision for our 3D pose estimator on these two datasets. The pose sequences come from the Panoptic dataset. You need to download it ([Google drive](https://drive.google.com/file/d/1yGoDO73X2hsV9QAjS1Lb2TBNikERQRJT/view?usp=sharing)) and put it under the `data/` directory.
 
+3. Download the [pretrained backbone model](https://drive.google.com/file/d/1Qlt_S5BoJcUIyXO5s6FEvVJ_ucQ1yN_L/view?usp=sharing) (ResNet-50 pretrained on COCO dataset and finetuned jointly on Panoptic dataset and MPII) for 2D heatmap estimation and place it under the `backbone/` directory.
+
 **Note**: As for the Shelf/Campus datasets, we directly test our model using 2D pose predictions from pre-trained [Mask R-CNN](https://github.com/matterport/Mask_RCNN) on [COCO Dataset](https://cocodataset.org/). We've already included the annotations in the `data/Campus` and `data/Shelf` directory.
 
 
 ### Preprocess Data
-To generate 2D heatmap predictions, you need to resize the RGB images in the pre-processing step. You can run the following code to preprocess the dataset. The supported argument `[DATASET_NAME]` includes `Panoptic`, `Shelf` abd `Campus`.
+To generate 2D heatmap predictions, you need to resize the RGB images in the pre-processing step. You can run the following code to preprocess the dataset. The supported argument `[DATASET_NAME]` includes `Panoptic`, `Shelf` and `Campus`.
 
 ```bash
 python preprocess.py --dataset [DATASET_NAME]
@@ -144,5 +146,5 @@ If you use our code or models in your research, please cite with:
 }
 ```
 
-## Acknowledgement
+## Acknowledgment
 This repo is built on the excellent work [VoxelPose](https://github.com/microsoft/voxelpose-pytorch). Thank the authors for releasing their codes.

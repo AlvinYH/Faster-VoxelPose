@@ -35,8 +35,6 @@ def train(config, backbone, model, optimizer, loader, epoch, output_dir, writer_
     resize_transform = torch.as_tensor(loader.dataset.resize_transform, dtype=torch.float, device=config.DEVICE)
 
     for i, (inputs, targets, meta, input_heatmaps) in enumerate(loader):
-        if i > 5:
-            break
         if config.DATASET.TEST_HEATMAP_SRC == 'image':
             inputs = inputs.to(config.DEVICE)
             targets = dict((k, v.to(config.DEVICE)) for k, v in targets.items())
@@ -160,8 +158,6 @@ def validate(config, backbone, model, loader, output_dir, has_evaluate_function=
                         speed=len(inputs) * inputs[0].size(0) / batch_time.val,
                         data_time=data_time, memory=gpu_memory_usage)
                 logger.info(msg)
-
-                all_fused_poses.append(fused_poses)
 
                 # visualization
                 if config.TEST.VISUALIZATION:
