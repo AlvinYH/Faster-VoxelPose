@@ -13,8 +13,8 @@ import torch.nn.functional as F
 def get_index2D(indices, shape):
     batch_size = indices.shape[0]
     num_people = indices.shape[1]
-    indices_x = torch.div(indices, shape[1], rounding_mode='trunc').reshape(batch_size, num_people, -1)
-    indices_y = (indices % shape[1]).reshape(batch_size, num_people, -1)
+    indices_x = torch.div(indices, shape[2], rounding_mode='trunc').reshape(batch_size, num_people, -1)
+    indices_y = (indices % shape[2]).reshape(batch_size, num_people, -1)
     indices = torch.cat([indices_x, indices_y], dim=2)
     return indices
 
